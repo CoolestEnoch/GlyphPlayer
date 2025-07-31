@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".ManualActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <Button
+            android:id="@+id/channelABtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="channelABtn"/>
+
+        <Button
+            android:id="@+id/channelBBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="channelBBtn"/>
+
+        <Button
+            android:id="@+id/channelCBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="channelCBtn"/>
+
+        <Button
+            android:id="@+id/channelDBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="channelDBtn"/>
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
