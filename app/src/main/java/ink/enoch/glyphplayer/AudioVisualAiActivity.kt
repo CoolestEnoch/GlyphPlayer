@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.google.android.material.snackbar.Snackbar
 import com.nothing.ketchum.Common
 import com.nothing.ketchum.Glyph
 import com.nothing.ketchum.GlyphException
@@ -25,9 +26,10 @@ class AudioVisualAiActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "GlyphMusicPlayer"
-        private const val FFT_FPS = 30 // 帧率 (1-60)
-        private const val FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
+        private var FFT_FPS = 10 // 帧率 (1-60)
+        private var FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
         private const val AUDIO_PERMISSION_REQUEST_CODE = 1001
+        private const val RECORD_PERMISSION_REQUEST_CODE = 1002
     }
 
     private lateinit var binding: ActivityAudioVisualAiBinding
@@ -77,7 +79,32 @@ class AudioVisualAiActivity : AppCompatActivity() {
                 Toast.LENGTH_LONG
             ).show()
         } else {
-            initializeGlyphManager()
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                initializeGlyphManager()
+            } else {
+                requestPermissions(
+                    arrayOf(Manifest.permission.RECORD_AUDIO),
+                    RECORD_PERMISSION_REQUEST_CODE
+                )
+            }
+        }
+
+        binding.btnFPSConfirm.setOnClickListener {
+            val fps_tmp = binding.etFPS.text.toString()
+            var fps_i = FFT_FPS;
+            try {
+                var fps_tmp_i = fps_tmp.toInt()
+                fps_i = fps_tmp_i
+            } catch (e: NumberFormatException) {
+                Snackbar.make(window.decorView, "Invalid int fps value", Snackbar.LENGTH_LONG)
+                    .show()
+            }
+            FFT_FPS = fps_i
+            FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
         }
 
         binding.btnChooseMusic.setOnClickListener {
@@ -102,20 +129,20 @@ class AudioVisualAiActivity : AppCompatActivity() {
                         lowFreqEnergy = i / 10f
                         midFreqEnergy = i / 10f
                         highFreqEnergy = i / 10f
-                        Log.e(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
-                        Log.e(TAG, "midFreqEnergy = ${midFreqEnergy}")
-                        Log.e(TAG, "highFreqEnergy = ${highFreqEnergy}")
-                        Log.e(TAG, "======================================")
+                        Log.d(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
+                        Log.d(TAG, "midFreqEnergy = ${midFreqEnergy}")
+                        Log.d(TAG, "highFreqEnergy = ${highFreqEnergy}")
+                        Log.d(TAG, "======================================")
                         Thread.sleep(10)
                     }
                     for (i in 10 downTo 0) {
                         lowFreqEnergy = i / 10f
                         midFreqEnergy = i / 10f
                         highFreqEnergy = i / 10f
-                        Log.e(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
-                        Log.e(TAG, "midFreqEnergy = ${midFreqEnergy}")
-                        Log.e(TAG, "highFreqEnergy = ${highFreqEnergy}")
-                        Log.e(TAG, "======================================")
+                        Log.d(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
+                        Log.d(TAG, "midFreqEnergy = ${midFreqEnergy}")
+                        Log.d(TAG, "highFreqEnergy = ${highFreqEnergy}")
+                        Log.d(TAG, "======================================")
                         Thread.sleep(10)
                     }
                 }
@@ -258,10 +285,10 @@ class AudioVisualAiActivity : AppCompatActivity() {
         //lowFreqEnergy = lowSum / 100000f //.coerceAtMost(1f)
         highFreqEnergy = highSum / 100000f //.coerceAtMost(1f)
         midFreqEnergy = (lowFreqEnergy + highFreqEnergy) / 2 // / 100000f //.coerceAtMost(1f)
-        Log.e(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
-        Log.e(TAG, "midFreqEnergy = ${midFreqEnergy}")
-        Log.e(TAG, "highFreqEnergy = ${highFreqEnergy}")
-        Log.e(TAG, "======================================")
+        Log.d(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
+        Log.d(TAG, "midFreqEnergy = ${midFreqEnergy}")
+        Log.d(TAG, "highFreqEnergy = ${highFreqEnergy}")
+        Log.d(TAG, "======================================")
 //        lowFreqEnergy = 0.5f
 //        midFreqEnergy = 0.5f
 //        highFreqEnergy = 0.5f
@@ -344,6 +371,12 @@ class AudioVisualAiActivity : AppCompatActivity() {
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) {
             openDocumentPicker()
+        }
+        if (requestCode == RECORD_PERMISSION_REQUEST_CODE &&
+            grantResults.isNotEmpty() &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        ) {
+            initializeGlyphManager()
         }
     }
 }
