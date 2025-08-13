@@ -408,7 +408,6 @@ class MusicPlayerUI : AppCompatActivity() {
             playList.forEach { uri ->
                 binding.llPlayList.addView(createPlaylistMusicCard(uri))
             }
-            initDone = true
             dialog?.dismiss()
         }
     }
