@@ -1,4 +1,4 @@
-package ink.enoch.glyphplayer
+package ink.enoch.glyphplayer.ui
 
 import android.Manifest
 import android.content.ComponentName
@@ -9,6 +9,7 @@ import android.media.audiofx.Visualizer
 import android.net.Uri
 import android.os.*
 import android.util.Log
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -24,13 +25,12 @@ import kotlin.concurrent.thread
 
 class AudioVisualAiActivity : AppCompatActivity() {
 
-    companion object {
-        private const val TAG = "GlyphMusicPlayer"
-        private var FFT_FPS = 10 // 帧率 (1-60)
-        private var FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
-        private const val AUDIO_PERMISSION_REQUEST_CODE = 1001
-        private const val RECORD_PERMISSION_REQUEST_CODE = 1002
-    }
+    private val TAG = "GlyphMusicPlayer"
+    private var FFT_FPS = 10 // 帧率 (1-60)
+    private var FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
+    private val AUDIO_PERMISSION_REQUEST_CODE = 1001
+    private val RECORD_PERMISSION_REQUEST_CODE = 1002
+    private val SAF_CHOOSE_AUDIO = 1003
 
     private lateinit var binding: ActivityAudioVisualAiBinding
     private var mediaPlayer: MediaPlayer? = null
@@ -42,6 +42,12 @@ class AudioVisualAiActivity : AppCompatActivity() {
 
     private val updateRunnable = object : Runnable {
         override fun run() {
+            runOnUiThread {
+                try {
+                    binding.sbProgress.progress = mediaPlayer!!.currentPosition
+                } catch (e: Exception) {
+                }
+            }
             updateGlyphLights()
             updateHandler?.postDelayed(this, FFT_REFRESH_RATE_MS)
         }
@@ -107,8 +113,35 @@ class AudioVisualAiActivity : AppCompatActivity() {
             FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
         }
 
-        binding.btnChooseMusic.setOnClickListener {
+        binding.btnPlayerUI.setOnClickListener {
+            startActivity(Intent().setClass(this@AudioVisualAiActivity, MusicPlayerUI::class.java))
+        }
+
+        binding.btnChooseMusicSingle.setOnClickListener {
             checkPermissionsAndOpenPicker()
+        }
+
+        binding.sbProgress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    mediaPlayer?.seekTo(progress) // 更新播放进度
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+
+        binding.btnPausePlay.setOnClickListener {
+            mediaPlayer?.let {
+                if (mIsPlaying) {
+                    mediaPlayer?.pause()
+                } else {
+                    mediaPlayer?.start()
+                }
+                mIsPlaying = !mIsPlaying
+            }
         }
 
         var rolling = false
@@ -117,9 +150,6 @@ class AudioVisualAiActivity : AppCompatActivity() {
             stopMusicAndCleanup()
         }
 
-        binding.btnEnableGlyph.setOnClickListener {
-
-        }
 
         binding.btnGlyphRolling.setOnClickListener {
             rolling = !rolling
@@ -200,6 +230,7 @@ class AudioVisualAiActivity : AppCompatActivity() {
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(applicationContext, uri)
                 setOnPreparedListener {
+                    binding.sbProgress.max = duration
                     start()
                     mIsPlaying = true
                     setupVisualizer(audioSessionId)

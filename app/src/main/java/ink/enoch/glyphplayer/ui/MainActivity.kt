@@ -1,4 +1,4 @@
-package ink.enoch.glyphplayer
+package ink.enoch.glyphplayer.ui
 
 import android.content.Intent
 import android.os.Bundle
@@ -7,8 +7,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.snackbar.Snackbar
+import ink.enoch.glyphplayer.R
 import ink.enoch.glyphplayer.databinding.ActivityMainBinding
-import ink.enoch.glyphplayer.databinding.ActivityManualBinding
 
 
 class MainActivity : AppCompatActivity() {
@@ -26,6 +26,10 @@ class MainActivity : AppCompatActivity() {
         }
 
 
+        binding.btnPlayerUI.setOnClickListener {
+            startActivity(Intent().setClass(this@MainActivity, MusicPlayerUI::class.java))
+        }
+
         binding.btnGoAudioVisualAi.setOnClickListener {
             Snackbar.make(window.decorView, "Go AudioVisualAi", Snackbar.LENGTH_LONG).show()
             startActivity(Intent().setClass(this@MainActivity, AudioVisualAiActivity::class.java))
@@ -33,6 +37,10 @@ class MainActivity : AppCompatActivity() {
         binding.btnGoDebug.setOnClickListener {
             Snackbar.make(window.decorView, "Go Debug", Snackbar.LENGTH_LONG).show()
             startActivity(Intent().setClass(this@MainActivity, ManualActivity::class.java))
+        }
+        binding.btnGoSeekbarDebug.setOnClickListener {
+            Snackbar.make(window.decorView, "Go Seekbar Debug", Snackbar.LENGTH_LONG).show()
+            startActivity(Intent().setClass(this@MainActivity, SeekbarDebug::class.java))
         }
     }
 }

@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="false"
+    tools:context=".ui.AudioVisualAiActivity">
+
+    <!-- 背景容器（将延伸到系统栏后面） -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fitsSystemWindows="false">
+
+        <!-- 背景图片（延伸到系统栏区域） -->
+        <ImageView
+            android:id="@+id/ivBlurBackground"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop" />
+
+        <!-- 半透明遮罩 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#66000000" />
+    </FrameLayout>
+
+
+    <!-- 前景部分 -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_marginVertical="20dp"
+        android:layout_height="wrap_content">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_marginTop="48dp"
+            android:fitsSystemWindows="true"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="32dp">
+
+            <!-- 封面带阴影 -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="280dp"
+                android:layout_height="280dp"
+                app:cardBackgroundColor="@android:color/transparent"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="16dp">
+
+                <ImageView
+                    android:id="@+id/ivAlbumArt"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:adjustViewBounds="true"
+                    android:contentDescription="专辑封面"
+                    android:scaleType="centerCrop" />
+
+            </androidx.cardview.widget.CardView>
+
+            <!-- 歌曲信息区域 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="24dp"
+                android:layout_marginTop="32dp"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <!-- 歌曲标题 (跑马灯效果) -->
+                <TextView
+                    android:id="@+id/tvSongTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="marquee"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:freezesText="true"
+                    android:gravity="center"
+                    android:marqueeRepeatLimit="marquee_forever"
+                    android:singleLine="true"
+                    android:text="音乐标题"
+                    android:textColor="@android:color/white"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
+
+                <!-- 歌手信息 -->
+                <TextView
+                    android:id="@+id/tvArtist"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:ellipsize="marquee"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:gravity="center"
+                    android:marqueeRepeatLimit="marquee_forever"
+                    android:singleLine="true"
+                    android:text="歌手"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="18sp" />
+
+                <!-- 专辑信息 -->
+                <TextView
+                    android:id="@+id/tvAlbum"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:ellipsize="marquee"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:gravity="center"
+                    android:marqueeRepeatLimit="marquee_forever"
+                    android:singleLine="true"
+                    android:text="专辑"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="16sp" />
+
+                <SeekBar
+                    android:id="@+id/sbProgress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="10dp"
+                    android:maxHeight="12dp"
+                    android:minHeight="12dp"
+                    android:progressBackgroundTint="#66FFFFFF"
+                    android:progressTint="#FF4081"
+                    android:thumb="@drawable/seekbar_thumb"
+                    android:thumbTint="#FFFFFF" />
+
+            </LinearLayout>
+
+            <!-- 控制按钮 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="48dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <!-- 上一首按钮 -->
+                <Button
+                    android:id="@+id/btnPrev"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/btn_control_bg"
+                    android:scaleType="center"
+                    android:text="←"
+                    app:tint="@android:color/white" />
+
+                <!-- 播放/暂停按钮 -->
+                <Button
+                    android:id="@+id/btnPlayPause"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:text="⏸️"
+                    android:layout_marginHorizontal="10dp"
+                    android:background="@drawable/btn_control_bg"
+                    android:scaleType="center"
+                    app:tint="@android:color/white" />
+
+                <!-- 下一首按钮 -->
+                <Button
+                    android:text="→"
+                    android:id="@+id/btnNext"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/btn_control_bg"
+                    android:scaleType="center"
+                    app:tint="@android:color/white" />
+
+                <!-- 随机/顺序按钮 -->
+                <Button
+                    android:id="@+id/btnShuffle"
+                    android:layout_width="64dp"
+                    android:text="🔁"
+                    android:layout_height="64dp"
+                    android:layout_marginStart="28dp"
+                    android:background="@drawable/btn_control_bg"
+                    android:scaleType="center"
+                    app:tint="@android:color/white" />
+
+                <!-- 歌单按钮 -->
+                <Button
+                    android:text="🎫"
+                    android:id="@+id/btnPlaylist"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/btn_control_bg"
+                    android:scaleType="center"
+                    app:tint="@android:color/white" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/llPlayList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginVertical="20dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvPlayList"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="    "
+                    android:textColor="@color/white" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -5,7 +5,7 @@
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    tools:context=".ui.MainActivity">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -14,6 +14,11 @@
         android:gravity="center">
 
 
+        <Button
+            android:id="@+id/btnPlayerUI"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GotoPlayerUI" />
         <Button
             android:id="@+id/btnGoAudioVisualAi"
             android:layout_width="wrap_content"
@@ -25,6 +30,12 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Goto Debug"/>
+
+        <Button
+            android:id="@+id/btnGoSeekbarDebug"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Goto Seekbar Debug"/>
 
     </LinearLayout>
 

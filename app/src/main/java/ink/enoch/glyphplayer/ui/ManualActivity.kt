@@ -1,4 +1,4 @@
-package ink.enoch.glyphplayer
+package ink.enoch.glyphplayer.ui
 
 import android.content.ComponentName
 import android.os.Bundle

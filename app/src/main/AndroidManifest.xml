@@ -17,12 +17,20 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.GlyphPlayer">
+        <profileable android:shell="true"/>
+        <activity
+            android:name=".ui.SeekbarDebug"
+            android:exported="false" />
+        <activity
+            android:name=".ui.MusicPlayerUI"
+            android:exported="false" />
+
         <meta-data
             android:name="NothingKey"
             android:value="wdnmd114514" />
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -31,13 +39,12 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".ManualActivity"
+            android:name=".ui.ManualActivity"
             android:exported="true" />
         <activity
-            android:name=".AudioVisualAiActivity"
+            android:name=".ui.AudioVisualAiActivity"
             android:exported="true"
-            android:theme="@style/Theme.GlyphPlayer">
-        </activity>
+            android:theme="@style/Theme.GlyphPlayer" />
     </application>
 
 </manifest>
