@@ -118,6 +118,7 @@ class MusicPlayerUI : AppCompatActivity() {
         }
 
         // 初始化Glyph
+        // 兼容性检查
         if (!Common.is24111()) {
             Toast.makeText(
                 this,
@@ -236,7 +237,7 @@ class MusicPlayerUI : AppCompatActivity() {
                     } else {
                         musicPlayer!!.play()
                         binding.btnPlayPause.text = "⏸\uFE0F"
-                        if (frequencyAnalyzer == null) {
+                        if (frequencyAnalyzer == null && Common.is24111()) {
                             frequencyAnalyzer =
                                 AudioFrequencyAnalyzer(musicPlayer!!.audioSessionId) { isGlyphDotMode }.apply {
                                     startAnalysis()
@@ -513,7 +514,7 @@ class MusicPlayerUI : AppCompatActivity() {
             addListener(object : Player.Listener {
                 override fun onAudioSessionIdChanged(audioSessionId: Int) {
                     super.onAudioSessionIdChanged(audioSessionId)
-                    if (frequencyAnalyzer == null) {
+                    if (frequencyAnalyzer == null && Common.is24111()) {
                         frequencyAnalyzer =
                             AudioFrequencyAnalyzer(thisPlayer.audioSessionId) { isGlyphDotMode }.apply {
                                 startAnalysis()

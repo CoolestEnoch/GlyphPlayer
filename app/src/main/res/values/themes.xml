@@ -4,6 +4,8 @@
         <!-- Customize your light theme here. -->
         <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
     </style>
+    <color name="musicInfoCardBg">@color/material_dynamic_neutral80</color>
+    <color name="musicInfoTextColor">@color/material_dynamic_neutral20</color>
 
     <style name="Theme.GlyphPlayer" parent="Base.Theme.GlyphPlayer" />
 </resources>

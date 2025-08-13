@@ -4,4 +4,6 @@
         <!-- Customize your dark theme here. -->
         <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
     </style>
+    <color name="musicInfoCardBg">@color/material_dynamic_neutral20</color>
+    <color name="musicInfoTextColor">@color/material_dynamic_neutral80</color>
 </resources>

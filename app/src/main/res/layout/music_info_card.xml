@@ -5,25 +5,27 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:padding="16dp"
-    android:background="@color/material_dynamic_neutral80"> <!-- 创建bg_card.xml定义卡片背景 -->
+    android:background="@color/musicInfoCardBg">
 
     <TextView
         android:id="@+id/tvMusicInfo"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
+        android:layout_weight="5"
         android:maxLines="1"
         android:ellipsize="marquee"
         android:focusable="true"
+        android:textColor="@color/musicInfoTextColor"
         android:focusableInTouchMode="true"
         android:textSize="16sp"
         android:textStyle="bold"/>
 
     <Button
         android:id="@+id/btnDelete"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
+        android:layout_weight="1"
         android:layout_height="wrap_content"
-        android:text="删除"
+        android:text="删"
         android:backgroundTint="#FF0000"
         android:textColor="@android:color/white"/>
 </LinearLayout>
