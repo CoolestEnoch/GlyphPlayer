@@ -63,7 +63,8 @@ class MusicPlayerUI : AppCompatActivity() {
     private var selectedFolderUri: Uri? = null // 存储用户选择的文件夹 URI
     private val validExtList = listOf("mp3", "flac") // 支持的扩展名列表
     private val playList = mutableListOf<Uri>() // 播放列表
-    private var playingIndex = 0 // 当前播放的音乐是播放列表里的第几个
+//    private var playingIndex = 0 // 当前播放的音乐是播放列表里的第几个
+    private var playingUri:Uri?=null // 当前播放的URI
     private var isShuffle = false // 随机播放
     private var isGlyphDotMode = false // Glyph是单点模式还是长条模式
 
@@ -188,6 +189,7 @@ class MusicPlayerUI : AppCompatActivity() {
                 if (isShuffle) {
                     playNewMusic(playList.random())
                 } else {
+                    var playingIndex = playList.indexOf(playingUri)
                     playingIndex -= 1
                     if (playingIndex < 0) playingIndex = (playList.size - 1) % playList.size
                     playNewMusic(playList[playingIndex])
@@ -204,6 +206,7 @@ class MusicPlayerUI : AppCompatActivity() {
                 if (isShuffle) {
                     playNewMusic(playList.random())
                 } else {
+                    var playingIndex = playList.indexOf(playingUri)
                     playingIndex = (playingIndex + 1) % playList.size
                     playNewMusic(playList[playingIndex])
                 }
@@ -247,7 +250,7 @@ class MusicPlayerUI : AppCompatActivity() {
                 } else {
                     val selectedMusicUri = playList.random()
                     val index = playList.indexOf(selectedMusicUri)
-                    playingIndex = index
+//                    playingIndex = index
                     playNewMusic(selectedMusicUri)
                 }
             }
@@ -488,6 +491,7 @@ class MusicPlayerUI : AppCompatActivity() {
     private fun playNewMusic(uri: Uri) {
         // 获取音乐uri
         val selectedMusicUri = uri
+        playingUri = uri
         // 设置封面等信息
         val metadata = getMusicMetadata(selectedMusicUri)
         binding.ivBlurBackground.setImageBitmap(metadata.cover)
