@@ -17,7 +17,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.GlyphPlayer">
-        <profileable android:shell="true"/>
+<!--        <profileable android:shell="true"/>-->
         <activity
             android:name=".ui.SeekbarDebug"
             android:exported="false" />

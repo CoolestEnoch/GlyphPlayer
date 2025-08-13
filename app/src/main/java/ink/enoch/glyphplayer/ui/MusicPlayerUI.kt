@@ -10,39 +10,43 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
-import android.media.audiofx.Visualizer
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.SeekBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.isVisible
 import androidx.documentfile.provider.DocumentFile
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import com.google.android.material.snackbar.Snackbar
-import ink.enoch.glyphplayer.R
-import ink.enoch.glyphplayer.databinding.ActivityMusicPlayerUiBinding
-import java.net.URLDecoder
-import kotlin.concurrent.thread
-import androidx.core.view.isVisible
-import androidx.media3.common.util.UnstableApi
 import com.nothing.ketchum.Common
 import com.nothing.ketchum.Glyph
+import ink.enoch.glyphplayer.R
+import ink.enoch.glyphplayer.databinding.ActivityMusicPlayerUiBinding
 import ink.enoch.glyphplayer.utils.AudioFrequencyAnalyzer
 import ink.enoch.glyphplayer.utils.GlyphHelper
 import ink.enoch.glyphplayer.utils.runOnMainThread
+import java.util.LinkedList
+import java.util.Queue
+import kotlin.concurrent.thread
 
 
 class MusicPlayerUI : AppCompatActivity() {
@@ -136,7 +140,8 @@ class MusicPlayerUI : AppCompatActivity() {
         }
 
         // 使用默认值设置封面和背景
-        val albumArtBitmap: Bitmap = BitmapFactory.decodeResource(resources, R.mipmap.miku)
+        val albumArtBitmap: Bitmap =
+            BitmapFactory.decodeResource(resources, R.mipmap.default_music_bg)
         binding.ivAlbumArt.setImageBitmap(albumArtBitmap)
         binding.ivBlurBackground.setImageBitmap(albumArtBitmap)
         binding.ivBlurBackground.setRenderEffect(
@@ -284,8 +289,131 @@ class MusicPlayerUI : AppCompatActivity() {
         frequencyAnalyzer = null
     }
 
-
     private fun initPlayList(folderUri: Uri) {
+        var dialog: AlertDialog? = null
+        runOnUiThread {
+            val builder = AlertDialog.Builder(this@MusicPlayerUI).apply {
+                setView(LinearLayout(this@MusicPlayerUI).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                    }
+                    addView(TextView(this@MusicPlayerUI).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            gravity = Gravity.CENTER
+                        }
+                        setPadding(0, 50, 0, 50)
+                        text = "Loading Playlist..."
+                        textSize = 35f
+                        setTypeface(null, Typeface.BOLD)
+                    })
+                    addView(TextView(this@MusicPlayerUI).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            gravity = Gravity.CENTER
+                        }
+                        setPadding(0, 0, 0, 0)
+                        textSize = 15f
+                        listOf(
+                            "(  ´･ω･)",
+                            "(　´･ω)",
+                            "(  　 ´･)",
+                            "( 　　´)",
+                            "(          )",
+                            "(`　　 )",
+                            "(･`       )",
+                            "(ω･`　)",
+                            "(･ω･`  )",
+                            "(´･ω･`)",
+                        ).let { list ->
+                            thread {
+                                Thread.sleep(500)
+                                while (dialog!!.isShowing) {
+                                    for (str in list) {
+                                        runOnUiThread {
+                                            setText(str)
+                                        }
+                                        Thread.sleep(50)
+                                    }
+                                }
+                            }
+                        }
+                    })
+                    addView(TextView(this@MusicPlayerUI).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            gravity = Gravity.CENTER
+                        }
+                        setPadding(0, 0, 0, 50)
+                        textSize = 30f
+                        listOf(
+                            "___(:з 」∠)_", "___(:з」 ∠)_", "__(:з 」∠)__",
+                            "__(:з」 ∠)__", "_(:з 」∠)___", "__(:з 」∠)__"
+                        ).let { list ->
+                            thread {
+                                Thread.sleep(500)
+                                while (dialog!!.isShowing) {
+                                    for (str in list) {
+                                        runOnUiThread {
+                                            setText(str)
+                                        }
+                                        Thread.sleep(500)
+                                    }
+                                }
+                            }
+                        }
+                    })
+                })
+            }
+            dialog = builder.create()
+            dialog!!.show()
+        }
+
+        fun isValidAudioFile(file: DocumentFile): Boolean {
+            if (!file.isFile) return false
+            val extension = file.name?.substringAfterLast('.', "")?.lowercase()
+            return extension in listOf("mp3", "flac") // 根据实际需要扩展
+        }
+
+        playList.clear()
+        val queue: Queue<DocumentFile> = LinkedList()
+        val rootFolder = DocumentFile.fromTreeUri(this, folderUri)
+        rootFolder?.let { queue.add(it) }
+
+        while (queue.isNotEmpty()) {
+            val currentFolder = queue.poll()
+            val files = currentFolder.listFiles() ?: continue
+
+            for (file in files) {
+                when {
+                    file.isDirectory -> queue.add(file)
+                    isValidAudioFile(file) -> playList.add(file.uri)
+                }
+            }
+        }
+
+        // 更新UI
+        runOnUiThread {
+            binding.llPlayList.removeAllViews()
+            playList.forEach { uri ->
+                binding.llPlayList.addView(createPlaylistMusicCard(uri))
+            }
+            initDone = true
+            dialog?.dismiss()
+        }
+    }
+
+    private fun initPlayListV1(folderUri: Uri) {
         fun isValidAudioFile(file: DocumentFile): Boolean {
             if (!file.isFile) return false
             // 获取小写扩展名（不带点）
@@ -320,14 +448,11 @@ class MusicPlayerUI : AppCompatActivity() {
         }
         // 现在 playList 包含所有有效音频文件的 URI
         // 可以开始使用播放列表
-        var index = 0
         playList.forEach { item ->
             runOnUiThread {
                 binding.llPlayList.addView(createPlaylistMusicCard(item))
             }
-            index++
         }
-
     }
 
     fun createPlaylistMusicCard(uri: Uri) = MusicInfoCard(this).apply {
@@ -370,6 +495,13 @@ class MusicPlayerUI : AppCompatActivity() {
         binding.tvSongTitle.text = metadata.title
         binding.tvArtist.text = metadata.artist
         binding.tvAlbum.text = metadata.album
+        binding.ivBlurBackground.setRenderEffect(
+            RenderEffect.createBlurEffect(
+                25f,
+                25f,
+                Shader.TileMode.REPEAT
+            )
+        )
         // 开始播放
         musicPlayer = ExoPlayer.Builder(this@MusicPlayerUI).build()
         musicPlayer!!.apply {
@@ -427,7 +559,7 @@ class MusicPlayerUI : AppCompatActivity() {
             val cover = if (coverData != null) {
                 BitmapFactory.decodeByteArray(coverData, 0, coverData.size)
             } else {
-                BitmapFactory.decodeResource(resources, R.mipmap.miku)
+                BitmapFactory.decodeResource(resources, R.mipmap.default_music_bg)
             }
             val title =
                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: "暂无标题"
@@ -440,7 +572,7 @@ class MusicPlayerUI : AppCompatActivity() {
         } catch (e: Exception) {
             // 异常处理：若无法获取元数据，则返回默认值
             return MusicMetaData(
-                BitmapFactory.decodeResource(resources, R.mipmap.miku),
+                BitmapFactory.decodeResource(resources, R.mipmap.default_music_bg),
                 "暂无标题",
                 "未知歌手",
                 "未知专辑"
