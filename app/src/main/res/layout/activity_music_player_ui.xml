@@ -32,8 +32,8 @@
     <!-- 前景部分 -->
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_marginVertical="20dp"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:layout_marginVertical="20dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -132,6 +132,15 @@
                     android:thumb="@drawable/seekbar_thumb"
                     android:thumbTint="#FFFFFF" />
 
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:id="@+id/tvProgressTime"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:text="11:45"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="16sp" />
+
             </LinearLayout>
 
             <!-- 控制按钮 -->
@@ -157,41 +166,41 @@
                     android:id="@+id/btnPlayPause"
                     android:layout_width="64dp"
                     android:layout_height="64dp"
-                    android:text="⏸️"
                     android:layout_marginHorizontal="10dp"
                     android:background="@drawable/btn_control_bg"
                     android:scaleType="center"
+                    android:text="⏸️"
                     app:tint="@android:color/white" />
 
                 <!-- 下一首按钮 -->
                 <Button
-                    android:text="→"
                     android:id="@+id/btnNext"
                     android:layout_width="64dp"
                     android:layout_height="64dp"
                     android:background="@drawable/btn_control_bg"
                     android:scaleType="center"
+                    android:text="→"
                     app:tint="@android:color/white" />
 
                 <!-- 随机/顺序按钮 -->
                 <Button
                     android:id="@+id/btnShuffle"
                     android:layout_width="64dp"
-                    android:text="🔁"
                     android:layout_height="64dp"
                     android:layout_marginStart="28dp"
                     android:background="@drawable/btn_control_bg"
                     android:scaleType="center"
+                    android:text="🔁"
                     app:tint="@android:color/white" />
 
                 <!-- 歌单按钮 -->
                 <Button
-                    android:text="🎫"
                     android:id="@+id/btnPlaylist"
                     android:layout_width="64dp"
                     android:layout_height="64dp"
                     android:background="@drawable/btn_control_bg"
                     android:scaleType="center"
+                    android:text="🎫"
                     app:tint="@android:color/white" />
 
             </LinearLayout>
