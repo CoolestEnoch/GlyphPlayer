@@ -6,6 +6,9 @@
     <string name="second_fragment_label">Second Fragment</string>
     <string name="next">Next</string>
     <string name="previous">Previous</string>
+    
+    <string name="uninstall_title">您真的要卸载Glyph Player吗</string>
+    <string name="uninstall_summary">卸载Glyph Player后，你的小米手机后盖也不会发光，因为这是给Nothing Phone (3a)写的程序。这条提示只是为了跟进一下小米的卸载提示API。玩得愉快！ ;)</string>
 
     <string name="lorem_ipsum">
         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris
