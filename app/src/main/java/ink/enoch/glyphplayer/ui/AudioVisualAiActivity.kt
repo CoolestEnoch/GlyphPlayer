@@ -1,368 +1,148 @@
 package ink.enoch.glyphplayer.ui
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
-import android.media.audiofx.Visualizer
 import android.net.Uri
-import android.os.*
-import android.util.Log
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.google.android.material.snackbar.Snackbar
-import com.nothing.ketchum.Common
 import com.nothing.ketchum.Glyph
-import com.nothing.ketchum.GlyphException
-import com.nothing.ketchum.GlyphManager
-import ink.enoch.glyphplayer.utils.visualizerSpectrum
+import ink.enoch.glyphplayer.R
 import ink.enoch.glyphplayer.databinding.ActivityAudioVisualAiBinding
-import kotlin.concurrent.thread
+import ink.enoch.glyphplayer.utils.AudioFrequencyAnalyzer
+import ink.enoch.glyphplayer.utils.GlyphHelper
 
-
+/** Experimental single-track controls use the same bounded FFT/output path as the music player. */
 class AudioVisualAiActivity : AppCompatActivity() {
-
-    private val TAG = "GlyphMusicPlayer"
-    private var FFT_FPS = 10 // 帧率 (1-60)
-    private var FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
-    private val RECORD_PERMISSION_REQUEST_CODE = 1002
-    private var pendingDocumentPicker = false
-
     private lateinit var binding: ActivityAudioVisualAiBinding
-    private var mediaPlayer: MediaPlayer? = null
-    private var visualizer: Visualizer? = null
-    private var glyphManager: GlyphManager? = null
-    private var isSupportedDevice = false
-    private var mIsPlaying = false
-    @Volatile private var rolling = false
-    private var updateHandler: Handler? = null
-
-    private val updateRunnable = object : Runnable {
+    private val handler = Handler(Looper.getMainLooper())
+    private var player: MediaPlayer? = null
+    private var prepared = false
+    private var analyzer: AudioFrequencyAnalyzer? = null
+    private var fps = 10
+    private var rolling = false
+    private var tick = 0
+    private var visible = false
+    private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        updatePermissionUi()
+        syncAnalyzer()
+    }
+    private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) play(uri)
+    }
+    private val updates = object : Runnable {
         override fun run() {
-            runOnUiThread {
-                try {
-                    binding.sbProgress.progress = mediaPlayer!!.currentPosition
-                } catch (e: Exception) {
-                }
+            if (!visible) return
+            if (prepared) binding.sbProgress.progress = player?.currentPosition ?: 0
+            if (rolling) {
+                val phase = tick++ % 40
+                val level = (if (phase <= 20) phase else 40 - phase) / 20f
+                GlyphHelper.show(GlyphHelper.GlyphTick(level, level, level, false, false, false))
             }
-            updateGlyphLights()
-            updateHandler?.postDelayed(this, FFT_REFRESH_RATE_MS)
+            handler.postDelayed(this, 1000L / fps)
         }
     }
-
-    // 频段能量值 (0-1)
-    private var lowFreqEnergy = 0f
-    private var midFreqEnergy = 0f
-    private var highFreqEnergy = 0f
-
-    // 设备型号常量
-    private val DEVICE_24111 = "24111"
-
-    // 灯条索引范围 (Phone 3a/3a Pro)
-    private val C_LED_RANGE = 0..19   // 中频 (C灯条)
-    private val A_LED_RANGE = 30 downTo 20  // 高频 (A灯条)
-    private val B_LED_RANGE = 31..35  // 低频 (B灯条)
-
-    private val documentLauncher =
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { playMusic(it) }
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityAudioVisualAiBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-        // 检查设备兼容性
-        isSupportedDevice = Common.is24111()
-        if (!isSupportedDevice) {
-            Toast.makeText(
-                this,
-                "Glyph lights only supported on Phone (3a) and (3a) Pro",
-                Toast.LENGTH_LONG
-            ).show()
-        } else {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                initializeGlyphManager()
-            } else {
-                requestPermissions(
-                    arrayOf(Manifest.permission.RECORD_AUDIO),
-                    RECORD_PERMISSION_REQUEST_CODE
-                )
-            }
-        }
-
+        binding.btnGrantMicrophone.setOnClickListener { permission.launch(Manifest.permission.RECORD_AUDIO) }
         binding.btnFPSConfirm.setOnClickListener {
-            val fps = binding.etFPS.text.toString().toIntOrNull()
-            if (fps == null || fps !in 1..60) {
-                Snackbar.make(binding.root, "FPS must be between 1 and 60", Snackbar.LENGTH_LONG).show()
-            } else {
-                FFT_FPS = fps
-                FFT_REFRESH_RATE_MS = 1000L / fps
-            }
+            val value = binding.etFPS.text.toString().toIntOrNull()
+            if (value == null || value !in 1..60) Toast.makeText(this, "FPS must be between 1 and 60", Toast.LENGTH_SHORT).show()
+            else { fps = value; syncAnalyzer() }
         }
-
-        binding.btnPlayerUI.setOnClickListener {
-            startActivity(Intent().setClass(this@AudioVisualAiActivity, MusicPlayerUI::class.java))
-        }
-
-        binding.btnChooseMusicSingle.setOnClickListener {
-            checkPermissionsAndOpenPicker()
-        }
-
-        binding.sbProgress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    mediaPlayer?.seekTo(progress) // 更新播放进度
-                }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-
+        binding.btnPlayerUI.setOnClickListener { startActivity(Intent(this, MusicPlayerUI::class.java)) }
+        binding.btnChooseMusicSingle.setOnClickListener { picker.launch(arrayOf("audio/*")) }
         binding.btnPausePlay.setOnClickListener {
-            mediaPlayer?.let {
-                if (mIsPlaying) {
-                    mediaPlayer?.pause()
-                } else {
-                    mediaPlayer?.start()
-                }
-                mIsPlaying = !mIsPlaying
-                if (!mIsPlaying) glyphManager?.turnOff()
+            if (prepared) {
+                player?.let { if (it.isPlaying) it.pause() else it.start() }
+                syncAnalyzer()
             }
         }
-
-        binding.btnStop.setOnClickListener {
-            rolling = false
-            stopMusicAndCleanup()
-        }
-
-
+        binding.btnStop.setOnClickListener { stop() }
         binding.btnGlyphRolling.setOnClickListener {
             rolling = !rolling
-            if (rolling) startGlyphUpdates() else glyphManager?.turnOff()
-            thread {
-                while (rolling) {
-                    for (i in 0..10) {
-                        if (!rolling) break
-                        lowFreqEnergy = i / 10f
-                        midFreqEnergy = i / 10f
-                        highFreqEnergy = i / 10f
-                        Log.d(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
-                        Log.d(TAG, "midFreqEnergy = ${midFreqEnergy}")
-                        Log.d(TAG, "highFreqEnergy = ${highFreqEnergy}")
-                        Log.d(TAG, "======================================")
-                        Thread.sleep(10)
-                    }
-                    for (i in 10 downTo 0) {
-                        if (!rolling) break
-                        lowFreqEnergy = i / 10f
-                        midFreqEnergy = i / 10f
-                        highFreqEnergy = i / 10f
-                        Log.d(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
-                        Log.d(TAG, "midFreqEnergy = ${midFreqEnergy}")
-                        Log.d(TAG, "highFreqEnergy = ${highFreqEnergy}")
-                        Log.d(TAG, "======================================")
-                        Thread.sleep(10)
-                    }
-                }
-            }
+            syncAnalyzer()
         }
-    }
-
-    private fun initializeGlyphManager() {
-        if (glyphManager != null) return
-        glyphManager = GlyphManager.getInstance(applicationContext)
-        glyphManager?.init(object : GlyphManager.Callback {
-            override fun onServiceConnected(componentName: ComponentName?) {
-                try {
-                    glyphManager?.register(Glyph.DEVICE_24111)
-                    glyphManager?.openSession()
-                    Log.d(TAG, "Glyph service connected")
-                } catch (e: GlyphException) {
-                    Log.e(TAG, "Glyph initialization error: ${e.message}")
-                }
+        binding.sbProgress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser && prepared) player?.seekTo(progress)
             }
-
-            override fun onServiceDisconnected(componentName: ComponentName?) {
-                try {
-                    glyphManager?.closeSession()
-                    Log.d(TAG, "Glyph service disconnected")
-                } catch (e: GlyphException) {
-                    Log.e(TAG, "Glyph close session error: ${e.message}")
-                }
-            }
+            override fun onStartTrackingTouch(bar: SeekBar?) { }
+            override fun onStopTrackingTouch(bar: SeekBar?) { }
         })
-    }
-
-    private fun checkPermissionsAndOpenPicker() {
-        // SAF itself needs no storage permission. RECORD_AUDIO is needed only by Visualizer.
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            openDocumentPicker()
-        } else {
-            pendingDocumentPicker = true
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), RECORD_PERMISSION_REQUEST_CODE)
-        }
-    }
-
-    private fun openDocumentPicker() {
-        documentLauncher.launch(arrayOf("audio/*"))
-    }
-
-    private fun playMusic(uri: Uri) {
-        stopMusicAndCleanup()
-
-        try {
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(applicationContext, uri)
-                setOnPreparedListener {
-                    binding.sbProgress.max = duration
-                    start()
-                    mIsPlaying = true
-                    try {
-                        setupVisualizer(audioSessionId)
-                        startGlyphUpdates()
-                    } catch (e: Exception) {
-                        Toast.makeText(this@AudioVisualAiActivity, "Cannot start audio visualizer: ${e.message}", Toast.LENGTH_LONG).show()
-                        stopMusicAndCleanup()
-                    }
-                }
-                prepareAsync()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error playing music: ${e.message}", Toast.LENGTH_SHORT).show()
-            Log.e(TAG, "MediaPlayer error", e)
-        }
-    }
-
-    private fun setupVisualizer(audioSessionId: Int) {
-        visualizer = Visualizer(audioSessionId).apply {
-            captureSize = Visualizer.getCaptureSizeRange()[1] // 最大捕获大小
-
-            setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
-                override fun onWaveFormDataCapture(
-                    visualizer: Visualizer?,
-                    waveform: ByteArray?,
-                    samplingRate: Int
-                ) {
-                    // 不需要波形数据
-                }
-
-                override fun onFftDataCapture(
-                    visualizer: Visualizer?,
-                    fftData: ByteArray?,
-                    samplingRate: Int
-                ) {
-                    fftData?.let { processFFTData(it, samplingRate) }
-                }
-            }, Visualizer.getMaxCaptureRate(), false, true) // 仅捕获FFT数据
-
-            enabled = true
-        }
-    }
-
-    private fun processFFTData(fftData: ByteArray, samplingRate: Int) {
-        val levels = visualizerSpectrum(fftData, samplingRate)
-        runOnUiThread {
-            lowFreqEnergy = levels.low
-            midFreqEnergy = levels.mid
-            highFreqEnergy = levels.high
-        }
-    }
-
-    private fun startGlyphUpdates() {
-        updateHandler?.removeCallbacks(updateRunnable)
-        updateHandler = Handler(Looper.getMainLooper())
-        updateHandler?.post(updateRunnable)
-    }
-
-    private fun updateGlyphLights() {
-        if (!isSupportedDevice || (!mIsPlaying && !rolling)) return
-
-        try {
-            val builder = glyphManager?.getGlyphFrameBuilder() ?: return
-
-            // 清除之前的设置
-
-            // 高频 - A灯条 (A1-A11)
-            val aLevel = (highFreqEnergy * A_LED_RANGE.count()).toInt()
-            A_LED_RANGE.take(aLevel).forEach { builder.buildChannel(it) }
-
-            // 中频 - C灯条 (C1-C20)
-            val cLevel = (midFreqEnergy * C_LED_RANGE.count()).toInt()
-            C_LED_RANGE.take(cLevel).forEach { builder.buildChannel(it) }
-
-            // 低频 - B灯条 (B1-B5)
-            val bLevel = (lowFreqEnergy * B_LED_RANGE.count()).toInt()
-            B_LED_RANGE.take(bLevel).forEach { builder.buildChannel(it) }
-
-            val frame = builder.build()
-            glyphManager?.toggle(frame)
-        } catch (e: GlyphException) {
-            Log.e(TAG, "Glyph update error: ${e.message}")
-        }
-    }
-
-    private fun stopMusicAndCleanup() {
-        rolling = false
-        mIsPlaying = false
-        updateHandler?.removeCallbacks(updateRunnable)
-
-        visualizer?.release()
-        visualizer = null
-        mediaPlayer?.release()
-        mediaPlayer = null
-
-        try {
-            glyphManager?.turnOff()
-        } catch (e: GlyphException) {
-            Log.e(TAG, "Glyph turn off error: ${e.message}")
-        }
     }
 
     override fun onStart() {
         super.onStart()
-        if (isSupportedDevice && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            initializeGlyphManager()
-        }
+        visible = true
+        updatePermissionUi()
+        GlyphHelper.init(this, Glyph.DEVICE_24111)
+        handler.post(updates)
     }
 
     override fun onStop() {
-        stopMusicAndCleanup()
-        try {
-            glyphManager?.closeSession()
-        } catch (e: GlyphException) {
-            Log.e(TAG, "Glyph cleanup error", e)
-        } finally {
-            glyphManager?.unInit()
-            glyphManager = null
-        }
+        visible = false
+        handler.removeCallbacks(updates)
+        stop()
+        GlyphHelper.release()
         super.onStop()
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == RECORD_PERMISSION_REQUEST_CODE &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            if (isSupportedDevice) initializeGlyphManager()
-            if (pendingDocumentPicker) openDocumentPicker()
+    private fun updatePermissionUi() {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        binding.btnGrantMicrophone.isEnabled = !granted
+        binding.btnGrantMicrophone.setText(if (granted) R.string.microphone_access_granted else R.string.grant_microphone)
+    }
+
+    private fun play(uri: Uri) {
+        stop()
+        val next = MediaPlayer()
+        player = next
+        try {
+            next.setDataSource(this, uri)
+            next.setOnPreparedListener {
+                if (player !== it || !visible) return@setOnPreparedListener
+                prepared = true
+                binding.sbProgress.max = it.duration
+                it.start()
+                syncAnalyzer()
+            }
+            next.setOnCompletionListener { syncAnalyzer() }
+            next.setOnErrorListener { _, _, _ -> stop(); true }
+            next.prepareAsync()
+        } catch (e: Exception) {
+            stop()
+            Toast.makeText(this, "Playback failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
-        pendingDocumentPicker = false
+    }
+
+    private fun syncAnalyzer() {
+        analyzer?.stopAnalysis()
+        analyzer = null
+        GlyphHelper.turnOffTheLight()
+        if (!rolling && prepared && player?.isPlaying == true &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            analyzer = AudioFrequencyAnalyzer(player!!.audioSessionId, { false }, fps).apply { startAnalysis() }
+        }
+    }
+
+    private fun stop() {
+        rolling = false
+        prepared = false
+        analyzer?.stopAnalysis()
+        analyzer = null
+        player?.release()
+        player = null
+        GlyphHelper.turnOffTheLight()
     }
 }

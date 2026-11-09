@@ -10,134 +10,78 @@ import com.nothing.ketchum.Glyph
 import ink.enoch.glyphplayer.R
 import ink.enoch.glyphplayer.databinding.ActivitySeekbarDebugBinding
 import ink.enoch.glyphplayer.utils.GlyphHelper
-import kotlin.concurrent.thread
 
 class SeekbarDebug : AppCompatActivity() {
     private lateinit var binding: ActivitySeekbarDebugBinding
-
-    private var start = 'a'
-    private var reverse = false
-    private var dot = false
+    private var flow = false
+    private var lightsEnabled = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         binding = ActivitySeekbarDebugBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+        flow = savedInstanceState?.getBoolean("flow") ?: false
+        lightsEnabled = savedInstanceState?.getBoolean("lightsEnabled") ?: false
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
-
-        GlyphHelper.init(this, Glyph.DEVICE_24111)
-
-        binding.sbA.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+        val listener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                binding.tvStatusA.text = "A = ${binding.sbA.progress}"
+                binding.tvStatusB.text = "B = ${binding.sbB.progress}"
+                binding.tvStatusC.text = "C = ${binding.sbC.progress}"
+                binding.tvStatusT.text = "T = ${binding.sbT.progress}"
                 if (fromUser) {
-                    binding.tvStatusA.text = "A = $progress"
-
-                    GlyphHelper.show(
-                        GlyphHelper.GlyphTick(
-                            binding.sbA.progress / 100f,
-                            binding.sbB.progress / 100f,
-                            binding.sbC.progress / 100f,
-                            true, true, true
-                        ), dot
-                    )
+                    flow = bar === binding.sbT
+                    lightsEnabled = true
+                    render()
                 }
             }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        binding.sbB.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    binding.tvStatusB.text = "B = $progress"
-
-                    GlyphHelper.show(
-                        GlyphHelper.GlyphTick(
-                            binding.sbA.progress / 100f,
-                            binding.sbB.progress / 100f,
-                            binding.sbC.progress / 100f,
-                            true, true, true
-                        ), dot
-                    )
-                }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        binding.sbC.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    binding.tvStatusC.text = "C = $progress"
-
-                    GlyphHelper.show(
-                        GlyphHelper.GlyphTick(
-                            binding.sbA.progress / 100f,
-                            binding.sbB.progress / 100f,
-                            binding.sbC.progress / 100f,
-                            true, true, true
-                        ), dot
-                    )
-                }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
+            override fun onStartTrackingTouch(bar: SeekBar?) { }
+            override fun onStopTrackingTouch(bar: SeekBar?) { }
+        }
+        listOf(binding.sbA, binding.sbB, binding.sbC, binding.sbT).forEach { it.setOnSeekBarChangeListener(listener) }
+        binding.cbR.setOnCheckedChangeListener { _, _ -> render() }
+        binding.cbDot.setOnCheckedChangeListener { _, _ -> render() }
+        listOf(binding.rbA, binding.rbB, binding.rbC).forEach { radio ->
+            radio.setOnCheckedChangeListener { _, checked -> if (checked) render() }
+        }
         binding.btnTurnOff.setOnClickListener {
+            lightsEnabled = false
             GlyphHelper.turnOffTheLight()
         }
-
-        binding.sbT.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    binding.tvStatusT.text = "T = $progress"
-
-                    GlyphHelper.showFlow(
-                        progress / 100f,
-                        start,
-                        reverse,
-                        dot
-                    )
-                }
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        binding.rbA.setOnCheckedChangeListener { buttonView, isChecked ->
-            if (isChecked) start = 'a'
-        }
-
-        binding.rbB.setOnCheckedChangeListener { buttonView, isChecked ->
-            if (isChecked) start = 'b'
-        }
-
-        binding.rbC.setOnCheckedChangeListener { buttonView, isChecked ->
-            if (isChecked) start = 'c'
-        }
-
-        binding.cbR.setOnCheckedChangeListener { buttonView, isChecked ->
-            reverse = isChecked
-        }
-
-        binding.cbDot.setOnCheckedChangeListener { buttonView, isChecked ->
-            dot = isChecked
-        }
-
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    override fun onStart() {
+        super.onStart()
+        GlyphHelper.init(this, Glyph.DEVICE_24111, onConnected = ::render)
+    }
+
+    override fun onStop() {
         GlyphHelper.release()
+        super.onStop()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("flow", flow)
+        outState.putBoolean("lightsEnabled", lightsEnabled)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun render() {
+        if (!lightsEnabled) return
+        val reverse = binding.cbR.isChecked
+        val dot = binding.cbDot.isChecked
+        if (flow) {
+            val start = when { binding.rbB.isChecked -> 'b'; binding.rbC.isChecked -> 'c'; else -> 'a' }
+            GlyphHelper.showFlow(binding.sbT.progress / 100f, start, reverse, dot)
+        } else {
+            // R applies to every individual strip, as well as the combined flow slider.
+            GlyphHelper.show(GlyphHelper.GlyphTick(binding.sbA.progress / 100f,
+                binding.sbB.progress / 100f, binding.sbC.progress / 100f, reverse, reverse, reverse), dot)
+        }
     }
 }

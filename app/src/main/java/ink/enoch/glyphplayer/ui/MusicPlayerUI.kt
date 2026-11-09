@@ -53,13 +53,17 @@ class MusicPlayerUI : AppCompatActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var analyzerSessionId = 0
     private var visible = false
-    private var dotMode = false
+    @Volatile private var dotMode = false
+    private var glyphEnabled = false
     private var analyzer: AudioFrequencyAnalyzer? = null
     private var artworkId: String? = null
     private var loading: AlertDialog? = null
 
     private val audioPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted && visible) { initGlyph(); syncPlaybackUi() }
+        binding.btnGrantMicrophone.isEnabled = !granted
+        binding.btnGrantMicrophone.setText(if (granted) R.string.microphone_access_granted else R.string.grant_microphone)
+        binding.btnGlyph.isEnabled = granted && Common.is24111()
+        syncPlaybackUi()
     }
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -72,6 +76,7 @@ class MusicPlayerUI : AppCompatActivity() {
         }
     }
     private val listener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { analyzer?.resetSensitivity() }
         override fun onEvents(player: Player, events: Player.Events) { syncPlaybackUi() }
         override fun onPlayerError(error: PlaybackException) {
             Toast.makeText(this@MusicPlayerUI, "Playback failed: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
@@ -130,8 +135,12 @@ class MusicPlayerUI : AppCompatActivity() {
             else binding.llPlayList.isVisible = !binding.llPlayList.isVisible
         }
         binding.btnPlaylist.setOnLongClickListener { folderPicker.launch(null); true }
-        if (Common.is24111() && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            audioPermission.launch(Manifest.permission.RECORD_AUDIO)
+        binding.btnGrantMicrophone.setOnClickListener { audioPermission.launch(Manifest.permission.RECORD_AUDIO) }
+        binding.btnGlyph.setOnClickListener {
+            glyphEnabled = !glyphEnabled
+            if (glyphEnabled) initGlyph() else { stopAnalyzer(); GlyphHelper.release() }
+            binding.btnGlyph.setText(if (glyphEnabled) R.string.disable_glyph else R.string.enable_glyph)
+            syncPlaybackUi()
         }
     }
 
@@ -139,6 +148,12 @@ class MusicPlayerUI : AppCompatActivity() {
         super.onStart()
         visible = true
         connectController()
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        binding.btnGrantMicrophone.isEnabled = !granted
+        binding.btnGrantMicrophone.setText(if (granted) R.string.microphone_access_granted else R.string.grant_microphone)
+        binding.btnGlyph.isEnabled = granted && Common.is24111()
+        if (!granted) glyphEnabled = false
+        binding.btnGlyph.setText(if (glyphEnabled) R.string.disable_glyph else R.string.enable_glyph)
         initGlyph()
         syncPlaybackUi()
         handler.post(progress)
@@ -205,7 +220,7 @@ class MusicPlayerUI : AppCompatActivity() {
     }
 
     private fun initGlyph() {
-        if (Common.is24111()) GlyphHelper.init(this, Glyph.DEVICE_24111)
+        if (glyphEnabled && Common.is24111()) GlyphHelper.init(this, Glyph.DEVICE_24111)
     }
 
     private fun stopAnalyzer() {
@@ -244,12 +259,12 @@ class MusicPlayerUI : AppCompatActivity() {
         }
         updateProgress()
         val audioSessionId = playback.sessionExtras.getInt(PlaybackService.EXTRA_AUDIO_SESSION_ID)
-        if (visible && playback.isPlaying && Common.is24111() && audioSessionId != 0 &&
+        if (glyphEnabled && visible && playback.isPlaying && Common.is24111() && audioSessionId != 0 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             if (analyzer == null || analyzerSessionId != audioSessionId) {
                 stopAnalyzer()
                 analyzerSessionId = audioSessionId
-                analyzer = AudioFrequencyAnalyzer(audioSessionId) { dotMode }.apply { startAnalysis() }
+                analyzer = AudioFrequencyAnalyzer(audioSessionId, { dotMode }).apply { startAnalysis() }
             }
         } else stopAnalyzer()
     }

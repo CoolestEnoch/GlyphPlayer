@@ -1,31 +1,61 @@
 package ink.enoch.glyphplayer.ui
 
 import android.Manifest
+import android.app.NotificationManager
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.IBinder
+import android.provider.Settings
 import androidx.activity.enableEdgeToEdge
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.nothing.ketchum.Common
-import com.nothing.ketchum.Glyph
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import ink.enoch.glyphplayer.R
 import ink.enoch.glyphplayer.databinding.ActivityMicrophoneVisualizerBinding
-import ink.enoch.glyphplayer.utils.GlyphHelper
-import ink.enoch.glyphplayer.utils.MicrophoneAnalyzer
-import ink.enoch.glyphplayer.utils.SpectrumLevels
+import ink.enoch.glyphplayer.service.MicrophoneService
 
 class MicrophoneVisualizerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMicrophoneVisualizerBinding
-    private var microphone: MicrophoneAnalyzer? = null
+    private var service: MicrophoneService? = null
+    private var bound = false
     private var visible = false
-    private var generation = 0
+    private var rendering = false
+    private var resumeCapture = false
+    private var microphoneGranted = false
+    private var notificationsGranted = false
+    private var lastState = MicrophoneService.State()
 
-    private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted && visible) startMicrophone()
-        else if (!granted) binding.tvMicrophoneStatus.setText(R.string.microphone_permission_denied)
+    private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        refreshAccess() // Granting permission never starts a feature.
+    }
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        refreshAccess()
+    }
+    private val observer: (MicrophoneService.State) -> Unit = ::render
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+            if (!visible) return
+            val capture = (binder as MicrophoneService.LocalBinder).getService()
+            service = capture
+            capture.listener = observer
+            if (!capture.state.requested) capture.setOptions(binding.switchGlyph.isChecked,
+                binding.switchDot.isChecked, binding.switchReverse.isChecked)
+            capture.setUiVisible(true)
+            if (resumeCapture && microphoneGranted && !capture.state.requested) capture.startCapture()
+            resumeCapture = false
+            render(capture.state)
+        }
+        override fun onServiceDisconnected(name: ComponentName) {
+            service = null
+            render(lastState.copy(capturing = false, requested = false, background = false))
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,89 +68,101 @@ class MicrophoneVisualizerActivity : AppCompatActivity() {
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
-        binding.btnStartMicrophone.setOnClickListener {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                startMicrophone()
-            } else permission.launch(Manifest.permission.RECORD_AUDIO)
+        resumeCapture = savedInstanceState?.getBoolean("resumeCapture") ?: false
+        if (savedInstanceState != null) lastState = lastState.copy(
+            glyph = savedInstanceState.getBoolean("glyph", true),
+            dot = savedInstanceState.getBoolean("dot"), reverse = savedInstanceState.getBoolean("reverse"))
+        binding.btnGrantMicrophone.setOnClickListener { microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
+        binding.btnGrantNotifications.setOnClickListener {
+            if (hasPermission(Manifest.permission.POST_NOTIFICATIONS)) {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+            } else notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        binding.btnStopMicrophone.setOnClickListener { stopMicrophone() }
-        binding.switchGlyph.setOnCheckedChangeListener { _, enabled ->
-            if (enabled && visible) connectGlyph() else {
-                GlyphHelper.release()
-                binding.tvGlyphStatus.setText(R.string.glyph_disabled)
+        binding.btnStartMicrophone.setOnClickListener { if (microphoneGranted) service?.startCapture() }
+        binding.btnStopMicrophone.setOnClickListener { resumeCapture = false; service?.stopCapture() }
+        binding.btnBackground.setOnClickListener {
+            if (service?.state?.background == true) service?.disableBackground()
+            else if (microphoneGranted && notificationsGranted) {
+                ContextCompat.startForegroundService(this, Intent(this, MicrophoneService::class.java)
+                    .setAction(MicrophoneService.ACTION_BACKGROUND))
             }
         }
-        binding.btnStopMicrophone.isEnabled = false
+        val changeOptions = { _: android.widget.CompoundButton, _: Boolean ->
+            if (!rendering) service?.setOptions(binding.switchGlyph.isChecked,
+                binding.switchDot.isChecked, binding.switchReverse.isChecked)
+        }
+        binding.switchGlyph.setOnCheckedChangeListener(changeOptions)
+        binding.switchDot.setOnCheckedChangeListener(changeOptions)
+        binding.switchReverse.setOnCheckedChangeListener(changeOptions)
     }
 
     override fun onStart() {
         super.onStart()
         visible = true
-        if (binding.switchGlyph.isChecked) connectGlyph()
+        refreshAccess()
+        bound = bindService(Intent(this, MicrophoneService::class.java), connection, Context.BIND_AUTO_CREATE)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshAccess()
+        if (!microphoneGranted) { resumeCapture = false; service?.stopCapture() }
+        else if (!notificationsGranted && service?.state?.background == true) service?.disableBackground()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("glyph", lastState.glyph)
+        outState.putBoolean("dot", lastState.dot)
+        outState.putBoolean("reverse", lastState.reverse)
+        outState.putBoolean("resumeCapture", resumeCapture || (lastState.requested && !lastState.background))
+        super.onSaveInstanceState(outState)
     }
 
     override fun onStop() {
         visible = false
-        stopMicrophone()
-        GlyphHelper.release()
+        service?.let {
+            resumeCapture = it.state.requested && !it.state.background
+            if (it.listener === observer) {
+                it.listener = null
+                it.setUiVisible(false)
+            }
+        }
+        if (bound) unbindService(connection)
+        bound = false
+        service = null
         super.onStop()
     }
 
-    private fun connectGlyph() {
-        if (!Common.is24111()) {
-            binding.switchGlyph.isChecked = false
-            binding.switchGlyph.isEnabled = false
-            binding.tvGlyphStatus.setText(R.string.glyph_supported_devices)
-            return
-        }
-        GlyphHelper.init(this, Glyph.DEVICE_24111) { message ->
-            if (visible) binding.tvGlyphStatus.text = message
-        }
+    private fun hasPermission(permission: String) = ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun refreshAccess() {
+        microphoneGranted = hasPermission(Manifest.permission.RECORD_AUDIO)
+        val channel = getSystemService(NotificationManager::class.java).getNotificationChannel("microphone_visualizer")
+        notificationsGranted = hasPermission(Manifest.permission.POST_NOTIFICATIONS) &&
+            NotificationManagerCompat.from(this).areNotificationsEnabled() && channel?.importance != NotificationManager.IMPORTANCE_NONE
+        render(service?.state ?: lastState)
     }
 
-    private fun startMicrophone() {
-        if (!visible || microphone != null) return
-        if (binding.switchGlyph.isChecked) connectGlyph()
-        val token = ++generation
-        val analyzer = MicrophoneAnalyzer(onLevels = { levels ->
-            runOnUiThread {
-                if (visible && token == generation) {
-                    displayLevels(levels)
-                    if (binding.switchGlyph.isChecked) {
-                        GlyphHelper.show(GlyphHelper.GlyphTick(levels.low, levels.mid, levels.high, true, false, false), binding.switchDot.isChecked)
-                    }
-                }
-            }
-        }, onError = { error ->
-            runOnUiThread {
-                if (token == generation) {
-                    stopMicrophone()
-                    binding.tvMicrophoneStatus.text = getString(R.string.microphone_error, error)
-                }
-            }
-        })
-        microphone = analyzer
-        if (analyzer.start()) {
-            binding.tvMicrophoneStatus.setText(R.string.microphone_listening)
-            binding.btnStartMicrophone.isEnabled = false
-            binding.btnStopMicrophone.isEnabled = true
-        } else microphone = null
-    }
-
-    private fun stopMicrophone() {
-        ++generation
-        microphone?.stop()
-        microphone = null
-        GlyphHelper.turnOffTheLight()
-        displayLevels(SpectrumLevels.SILENT)
-        binding.btnStartMicrophone.isEnabled = true
-        binding.btnStopMicrophone.isEnabled = false
-        binding.tvMicrophoneStatus.setText(R.string.microphone_stopped)
-    }
-
-    private fun displayLevels(levels: SpectrumLevels) {
-        binding.levelLow.progress = (levels.low * 100).toInt()
-        binding.levelMid.progress = (levels.mid * 100).toInt()
-        binding.levelHigh.progress = (levels.high * 100).toInt()
+    private fun render(state: MicrophoneService.State) {
+        lastState = state
+        rendering = true
+        try {
+            binding.btnGrantMicrophone.isEnabled = !microphoneGranted
+            binding.btnGrantMicrophone.setText(if (microphoneGranted) R.string.microphone_access_granted else R.string.grant_microphone)
+            binding.btnGrantNotifications.isEnabled = !notificationsGranted
+            binding.btnGrantNotifications.setText(if (notificationsGranted) R.string.notification_access_granted else R.string.grant_notifications)
+            binding.btnStartMicrophone.isEnabled = microphoneGranted && service != null && !state.capturing
+            binding.btnStopMicrophone.isEnabled = state.requested
+            binding.btnBackground.isEnabled = service != null && ((microphoneGranted && notificationsGranted) || state.background)
+            binding.btnBackground.setText(if (state.background) R.string.microphone_background_disable else R.string.microphone_background_enable)
+            binding.tvMicrophoneStatus.text = state.message
+            binding.tvGlyphStatus.text = state.glyphMessage
+            binding.switchGlyph.isChecked = state.glyph
+            binding.switchDot.isChecked = state.dot
+            binding.switchReverse.isChecked = state.reverse
+            binding.levelLow.progress = (state.levels.low * 100).toInt()
+            binding.levelMid.progress = (state.levels.mid * 100).toInt()
+            binding.levelHigh.progress = (state.levels.high * 100).toInt()
+        } finally { rendering = false }
     }
 }

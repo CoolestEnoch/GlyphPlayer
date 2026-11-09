@@ -26,6 +26,21 @@
             android:layout_marginTop="24dp"
             android:text="@string/microphone_stopped" />
         <Button
+            android:id="@+id/btnGrantMicrophone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/grant_microphone" />
+        <Button
+            android:id="@+id/btnGrantNotifications"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/grant_notifications" />
+        <Button
+            android:id="@+id/btnBackground"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/microphone_background_enable" />
+        <Button
             android:id="@+id/btnStartMicrophone"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -53,6 +68,12 @@
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             android:text="@string/glyph_dot_mode" />
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchReverse"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/glyph_reverse" />
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

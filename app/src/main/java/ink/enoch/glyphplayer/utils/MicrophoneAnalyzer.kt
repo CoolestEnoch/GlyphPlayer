@@ -6,8 +6,10 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Process
 import kotlin.concurrent.thread
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-/** Captures only while the owning screen is started; no audio is saved or transmitted. */
+/** One capture thread feeds one fixed FFT/output worker; neither thread is created per request. */
 class MicrophoneAnalyzer(
     private val onLevels: (SpectrumLevels) -> Unit,
     private val onError: (String) -> Unit
@@ -15,6 +17,8 @@ class MicrophoneAnalyzer(
     @Volatile private var running = false
     private var recorder: AudioRecord? = null
     private var worker: Thread? = null
+    private var fftWorker: ExecutorService? = null
+    private var fftRequests: LatestValueDispatcher<ShortArray>? = null
 
     @SuppressLint("MissingPermission") // The activity checks and requests RECORD_AUDIO before start().
     fun start(): Boolean {
@@ -29,21 +33,30 @@ class MicrophoneAnalyzer(
             audio.startRecording()
             check(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Cannot start microphone" }
             running = true
-            worker = thread(name = "Microphone spectrum") {
+            val spectrum = PcmSpectrumAnalyzer(FRAME_SIZE, SAMPLE_RATE)
+            val compute = Executors.newSingleThreadExecutor { task -> Thread(task, "Microphone FFT and Glyph") }
+            fftWorker = compute
+            var levels = SpectrumLevels.SILENT
+            val requests = LatestValueDispatcher<ShortArray>({ compute.execute(it) }) { samples ->
+                if (running) {
+                    levels = spectrum.analyze(samples).smooth(levels)
+                    if (running) onLevels(levels)
+                }
+            }
+            fftRequests = requests
+            worker = thread(name = "Microphone capture") {
                 try {
                     Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-                    val spectrum = PcmSpectrumAnalyzer(FRAME_SIZE, SAMPLE_RATE)
                     val samples = ShortArray(FRAME_SIZE)
                     var filled = 0
-                    var levels = SpectrumLevels.SILENT
                     while (running) {
                         val count = audio.read(samples, filled, samples.size - filled, AudioRecord.READ_BLOCKING)
                         if (!running) break
                         check(count > 0) { "Microphone read failed ($count)" }
                         filled += count
                         if (filled == samples.size) {
-                            levels = spectrum.analyze(samples).smooth(levels)
-                            onLevels(levels)
+                            // One calculating frame + one replaceable pending frame, never a FIFO backlog.
+                            requests.offer(samples.copyOf())
                             filled = 0
                         }
                     }
@@ -51,12 +64,17 @@ class MicrophoneAnalyzer(
                     if (running) onError(e.message ?: "Microphone capture failed")
                 } finally {
                     running = false
+                    requests.close()
+                    compute.shutdown()
                     try { audio.stop() } catch (_: IllegalStateException) { }
                     audio.release()
                 }
             }
             return true
         } catch (e: Exception) {
+            running = false
+            fftRequests?.close()
+            fftWorker?.shutdown()
             recorder?.release()
             recorder = null
             onError(e.message ?: "Microphone is unavailable")
@@ -66,6 +84,10 @@ class MicrophoneAnalyzer(
 
     fun stop() {
         running = false
+        fftRequests?.close()
+        fftRequests = null
+        fftWorker?.shutdown()
+        fftWorker = null
         try { recorder?.stop() } catch (_: IllegalStateException) { }
         worker?.join(300)
         worker = null

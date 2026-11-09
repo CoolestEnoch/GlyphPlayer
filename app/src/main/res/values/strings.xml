@@ -47,12 +47,12 @@
         vestibulum. Fusce dictum libero quis erat maximus, vitae volutpat diam dignissim.
     </string>
     <string name="microphone_visualizer">Microphone Visualizer</string>
-    <string name="microphone_description">Visualize nearby sound on your Glyph lights. Audio is processed on your phone and is never saved. Recording stops when you leave this screen.</string>
+    <string name="microphone_description">Visualize nearby sound on your Glyph lights. Audio is processed on your phone and is never saved. Foreground capture pauses when you leave and resumes when you return. Enable background mode separately to keep listening while locked.</string>
     <string name="microphone_start">Start microphone</string>
     <string name="microphone_stop">Stop microphone</string>
     <string name="microphone_stopped">Microphone stopped</string>
     <string name="microphone_listening">Listening…</string>
-    <string name="microphone_permission_denied">Microphone permission is required. Tap Start microphone to try again, or enable it in app settings.</string>
+    <string name="microphone_permission_denied">Microphone permission is required. Use Grant microphone access, or enable it in app settings.</string>
     <string name="microphone_error">Microphone error: %1$s</string>
     <string name="glyph_interface">Glyph Interface</string>
     <string name="glyph_supported_devices">Glyph lights require Nothing Phone (3a) or (3a) Pro.</string>
@@ -61,4 +61,13 @@
     <string name="microphone_low">Low · 40–250 Hz · A strip</string>
     <string name="microphone_mid">Mid · 250–2000 Hz · B strip</string>
     <string name="microphone_high">High · 2000–8000 Hz · C strip</string>
+    <string name="grant_microphone">Grant microphone access</string>
+    <string name="grant_notifications">Grant notification access (background mode)</string>
+    <string name="microphone_access_granted">Microphone access granted</string>
+    <string name="notification_access_granted">Notification access granted</string>
+    <string name="microphone_background_enable">Run in background</string>
+    <string name="microphone_background_disable">Disable background mode</string>
+    <string name="glyph_reverse">Reverse direction (R)</string>
+    <string name="enable_glyph">Enable Glyph lights</string>
+    <string name="disable_glyph">Disable Glyph lights</string>
 </resources>

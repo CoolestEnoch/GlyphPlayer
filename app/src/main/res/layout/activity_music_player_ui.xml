@@ -205,6 +205,16 @@
 
             </LinearLayout>
 
+            <Button
+                android:id="@+id/btnGrantMicrophone"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/grant_microphone" />
+            <Button
+                android:id="@+id/btnGlyph"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/enable_glyph" />
             <LinearLayout
                 android:id="@+id/llPlayList"
                 android:layout_width="match_parent"

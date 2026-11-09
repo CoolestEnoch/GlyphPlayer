@@ -4,6 +4,8 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.log10
 import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.math.pow
 
 /** Normalized low (40–250 Hz), mid (250–2000 Hz), high (2000–8000 Hz) levels. */
 data class SpectrumLevels(val low: Float, val mid: Float, val high: Float) {
@@ -34,16 +36,46 @@ private fun band(frequency: Double): Int = when {
 /** Android Visualizer reports sampling rate in millihertz, and signed, packed FFT bytes. */
 fun visualizerSpectrum(fft: ByteArray, samplingRateMilliHz: Int): SpectrumLevels {
     if (fft.size < 4 || samplingRateMilliHz <= 0) return SpectrumLevels.SILENT
-    val powers = DoubleArray(3)
-    val sampleRate = samplingRateMilliHz / 1000.0
-    for (bin in 1 until fft.size / 2) {
-        val index = band(bin * sampleRate / fft.size)
-        if (index < 0) continue
-        val real = fft[2 * bin] / 128.0
-        val imaginary = fft[2 * bin + 1] / 128.0
-        powers[index] += real * real + imaginary * imaginary
+    return VisualizerSpectrumAnalyzer(fft.size, samplingRateMilliHz).analyze(fft)
+}
+
+/** Reuse the frequency-bin lookup while the source format is unchanged. */
+class VisualizerSpectrumAnalyzer(private val size: Int, sampleRateMilliHz: Int) {
+    private val bands = IntArray(size / 2) { band(it * (sampleRateMilliHz / 1000.0) / size) }
+    private val counts = IntArray(3).apply {
+        for (bin in 1 until bands.size) if (bands[bin] >= 0) this[bands[bin]]++
     }
-    return SpectrumLevels(normalizedEnergy(powers[0]), normalizedEnergy(powers[1]), normalizedEnergy(powers[2]))
+    // CAVA linear scaling averages FFT magnitudes and compensates higher-frequency bands.
+    private val weights = doubleArrayOf((250.0 / 1000).pow(0.85), (2000.0 / 1000).pow(0.85), (8000.0 / 1000).pow(0.85))
+
+    fun musicMagnitudes(fft: ByteArray): SpectrumLevels {
+        require(fft.size == size)
+        var low = 0.0
+        var mid = 0.0
+        var high = 0.0
+        for (bin in 1 until bands.size) {
+            val real = fft[2 * bin] / 128.0
+            val imaginary = fft[2 * bin + 1] / 128.0
+            val amplitude = sqrt(real * real + imaginary * imaginary)
+            when (bands[bin]) { 0 -> low += amplitude; 1 -> mid += amplitude; 2 -> high += amplitude }
+        }
+        return SpectrumLevels((low / maxOf(1, counts[0]) * weights[0]).toFloat(),
+            (mid / maxOf(1, counts[1]) * weights[1]).toFloat(), (high / maxOf(1, counts[2]) * weights[2]).toFloat())
+    }
+
+    fun analyze(fft: ByteArray): SpectrumLevels {
+        require(fft.size == size)
+        var low = 0.0
+        var mid = 0.0
+        var high = 0.0
+        for (bin in 1 until bands.size) {
+            val real = fft[2 * bin] / 128.0
+            val imaginary = fft[2 * bin + 1] / 128.0
+            val power = real * real + imaginary * imaginary
+            when (bands[bin]) { 0 -> low += power; 1 -> mid += power; 2 -> high += power }
+        }
+        return SpectrumLevels(normalizedEnergy(low), normalizedEnergy(mid), normalizedEnergy(high))
+    }
 }
 
 /** Radix-2 FFT over a Hann-windowed PCM frame. Reuse one instance on the recording thread. */
@@ -54,29 +86,24 @@ class PcmSpectrumAnalyzer(private val size: Int = 2048, private val sampleRate: 
     }
     private val real = DoubleArray(size)
     private val imaginary = DoubleArray(size)
+    private val stages = Integer.numberOfTrailingZeros(size)
+    private val reversed = IntArray(size) { Integer.reverse(it) ushr (32 - stages) }
     private val window = DoubleArray(size) { 0.5 * (1.0 - cos(2.0 * PI * it / (size - 1))) }
+    private val stepReal = DoubleArray(stages) { cos(-2.0 * PI / (1 shl (it + 1))) }
+    private val stepImaginary = DoubleArray(stages) { sin(-2.0 * PI / (1 shl (it + 1))) }
+    private val bands = IntArray(size / 2) { band(it.toDouble() * sampleRate / size) }
+    private val powerScale = 4.0 / (size.toDouble() * size)
 
     fun analyze(samples: ShortArray): SpectrumLevels {
         require(samples.size == size)
         val mean = samples.sumOf { it.toDouble() } / size
-        for (i in 0 until size) {
-            real[i] = (samples[i] - mean) / 32768.0 * window[i]
-            imaginary[i] = 0.0
-        }
-        var j = 0
-        for (i in 1 until size) {
-            var bit = size shr 1
-            while (j and bit != 0) { j = j xor bit; bit = bit shr 1 }
-            j = j xor bit
-            if (i < j) {
-                val swap = real[i]; real[i] = real[j]; real[j] = swap
-            }
-        }
+        imaginary.fill(0.0)
+        for (i in 0 until size) real[reversed[i]] = (samples[i] - mean) / 32768.0 * window[i]
         var length = 2
+        var stage = 0
         while (length <= size) {
-            val angle = -2.0 * PI / length
-            val stepReal = cos(angle)
-            val stepImaginary = sin(angle)
+            val sr = stepReal[stage]
+            val si = stepImaginary[stage]
             for (start in 0 until size step length) {
                 var wr = 1.0
                 var wi = 0.0
@@ -89,18 +116,21 @@ class PcmSpectrumAnalyzer(private val size: Int = 2048, private val sampleRate: 
                     imaginary[b] = imaginary[a] - ti
                     real[a] += tr
                     imaginary[a] += ti
-                    val nextWr = wr * stepReal - wi * stepImaginary
-                    wi = wr * stepImaginary + wi * stepReal
+                    val nextWr = wr * sr - wi * si
+                    wi = wr * si + wi * sr
                     wr = nextWr
                 }
             }
             length *= 2
+            stage++
         }
-        val powers = DoubleArray(3)
+        var low = 0.0
+        var mid = 0.0
+        var high = 0.0
         for (bin in 1 until size / 2) {
-            val index = band(bin.toDouble() * sampleRate / size)
-            if (index >= 0) powers[index] += (real[bin] * real[bin] + imaginary[bin] * imaginary[bin]) * 4.0 / (size.toDouble() * size)
+            val power = (real[bin] * real[bin] + imaginary[bin] * imaginary[bin]) * powerScale
+            when (bands[bin]) { 0 -> low += power; 1 -> mid += power; 2 -> high += power }
         }
-        return SpectrumLevels(normalizedEnergy(powers[0]), normalizedEnergy(powers[1]), normalizedEnergy(powers[2]))
+        return SpectrumLevels(normalizedEnergy(low), normalizedEnergy(mid), normalizedEnergy(high))
     }
 }
