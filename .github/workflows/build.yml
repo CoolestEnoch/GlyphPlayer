@@ -95,9 +95,9 @@ jobs:
           apk=app/build/outputs/apk/release/app-release.apk
           test -s "$apk"
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$apk#GlyphPlayer APK" --clobber
+            gh release upload "$RELEASE_TAG" "$apk" --clobber
           else
-            gh release create "$RELEASE_TAG" "$apk#GlyphPlayer APK" \
+            gh release create "$RELEASE_TAG" "$apk" \
               --verify-tag --title "$RELEASE_TAG" --generate-notes --draft
           fi
           if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == true ]]; then
