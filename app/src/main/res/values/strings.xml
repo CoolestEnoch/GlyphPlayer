@@ -70,4 +70,15 @@
     <string name="glyph_reverse">Reverse direction (R)</string>
     <string name="enable_glyph">Enable Glyph lights</string>
     <string name="disable_glyph">Disable Glyph lights</string>
+    <string name="audio_playback_capture">Audio Playback Capture</string>
+    <string name="system_audio_description">Visualize audio played by other apps without using the microphone. Android requires audio-recording and system capture authorization. No screen images or audio files are saved. Some apps block playback capture. Background mode requires notification access and must be enabled separately.</string>
+    <string name="grant_audio_capture">Grant audio capture access</string>
+    <string name="audio_access_granted">Audio capture access granted</string>
+    <string name="authorize_system_audio">Authorize system audio</string>
+    <string name="system_audio_authorized">System audio authorized. Tap Start capture.</string>
+    <string name="system_audio_denied">System audio authorization was not granted.</string>
+    <string name="system_audio_start">Start capture</string>
+    <string name="system_audio_stop">Stop capture</string>
+    <string name="system_audio_stopped">System audio capture stopped</string>
+    <string name="system_audio_background_disable">Use foreground only</string>
 </resources>

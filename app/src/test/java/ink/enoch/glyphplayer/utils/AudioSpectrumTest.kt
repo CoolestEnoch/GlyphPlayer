@@ -35,6 +35,28 @@ class AudioSpectrumTest {
         assertTrue(loud <= 1f)
     }
 
+    @Test fun playbackPcmKeepsAmplitudeChangesBeforeTheEnvelope() {
+        val spectrum = PcmSpectrumAnalyzer()
+        val quiet = spectrum.musicMagnitudes(tone(1000.0, 0.01)).mid
+        val loud = spectrum.musicMagnitudes(tone(1000.0, 0.1)).mid
+        assertEquals(10f, loud / quiet, 0.1f)
+    }
+
+    @Test fun pcmThroughEnvelopeAndGlyphUsesTheWholeStrip() {
+        val spectrum = PcmSpectrumAnalyzer()
+        val envelope = MusicEnvelope()
+        val positions = mutableSetOf<Long>()
+        repeat(5) {
+            for (frame in 0..20) {
+                val amount = if (frame <= 10) frame / 10.0 else (20 - frame) / 10.0
+                val levels = envelope.process(spectrum.musicMagnitudes(tone(1000.0, 0.2 * amount)), 1.0 / 30)
+                positions.add(GlyphLayout.stripMask(levels.mid, 'b', false, true))
+                assertTrue("A pure mid tone must not amplify FFT leakage into other strips", levels.low < 0.01f && levels.high < 0.01f)
+            }
+        }
+        assertTrue("Expected all five B dot positions plus silence, got $positions", positions.size >= 6)
+    }
+
     @Test fun visualizerUsesMillihertzAndPackedBinIndices() {
         fun bandAt(bin: Int): SpectrumLevels {
             val fft = ByteArray(1024)

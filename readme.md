@@ -30,6 +30,19 @@ Notification access is optional. Without it, microphone capture works while the 
 
 The connection status appears below the Glyph switch. Audio is processed locally in memory; it is never saved or uploaded. The music player, microphone and slider test use one coordinated Glyph session so other screens cannot close the microphone's active background session.
 
+## Audio Playback Capture
+
+**Audio Playback Capture** is a separate home-screen entry and service. It captures eligible media/game playback from other apps as PCM without opening the physical microphone. The existing **Microphone Visualizer** remains a separate feature with its own controls, state and notification.
+
+1. Tap **Grant audio capture access** to grant Android's `RECORD_AUDIO` permission. The permission is required even though this feature does not use the microphone.
+2. Tap **Authorize system audio** and approve Android's capture dialog. This only prepares a one-use authorization; it does not start capturing.
+3. Tap **Start capture**. No audio or screen-image files are saved, and no virtual display is created.
+4. Optionally grant notification access with its own button, then tap **Run in background** before leaving the page. Without that grant, foreground capture remains usable but background mode is disabled.
+
+MediaProjection requires a `mediaProjection` foreground service even for foreground-only use. The service always supplies its notification; Android controls whether it appears in the drawer when notification permission is denied. When background mode is off, leaving the page stops the session. Starting again requires a new explicit **Authorize system audio** action. Notification Stop and Android's system capture Stop both release the session and turn off its lights. Capture is never restarted automatically after authorization ends or after a process kill.
+
+The source app must allow Android playback capture, and the source must use an eligible audio usage in the same user profile. Apps that prohibit capture produce silence; the screen then explains that no capturable audio is arriving. Firmware-specific screen-lock behavior still needs verification on the device. Capture sessions are independent, but the physical Glyph lights have one owner: if another visualizer owns them, the connection status reports this rather than closing that visualizer's session.
+
 ## Glyph Slider Test
 
 A/B/C control individual strips; T controls a combined flow starting at the selected strip. **Reverse direction (R)** applies to all four sliders and to dot mode. Changing direction, dot mode or the start strip redraws the active frame immediately. Turning lights off keeps them off until a slider is moved again.
@@ -40,11 +53,13 @@ Each audio source uses one fixed FFT/output worker and a capacity-one pending ma
 
 FFT buffers, frequency-bin indices, windows, bit-reversal tables and twiddle steps are reused. A 36-bit mask represents the physical LEDs, so percentage mapping builds no per-frame channel lists. Identical masks skip redundant hardware writes. Session changes and manual animations invalidate the output cache.
 
-The music visualizer adapts CAVA's automatic sensitivity, gravity falloff and integral smoothing, used by [Kurve](https://github.com/luisbocanegra/kurve). It works on linear FFT magnitudes before clipping, applies frequency compensation, and recalibrates when the track changes. It retains three frequency bands for the three Glyph strips rather than implementing Kurve's desktop rendering. The port is based on [CAVA cavacore.c at 5eb61ec](https://github.com/karlstav/cava/blob/5eb61ec68fbd26e729069e9f14d1e8bb31af1bc4/cavacore.c); CAVA's MIT copyright and license are preserved in `app/src/main/assets/licenses/CAVA.txt` and packaged in the APK.
+The music visualizer uses CAVA-inspired auto-ranging, as found in [Kurve](https://github.com/luisbocanegra/kurve), with a three-strip dynamic mapping. Each frequency band tracks its own recent peaks and troughs in a bounded three-second window. Fixed-capacity monotonic deques update that window without rescanning/sorting or per-frame allocations. A fast attack and short, time-based release preserve musical peaks and valleys; the previous accumulated integral and shared gain are no longer used because they compressed movement into a few middle LEDs. Steady input remains steady, silence decays to zero, and low-level FFT leakage is gated relative to the audible signal.
+
+Music-player Visualizer capture uses `SCALING_MODE_AS_PLAYED` so Android does not normalize away amplitude differences before analysis. System playback capture feeds linear PCM band magnitudes directly to the same envelope. Microphone capture keeps its independent input behavior. Switching tracks resets the music history. The original CAVA reference and MIT attribution remain in [cavacore.c at 5eb61ec](https://github.com/karlstav/cava/blob/5eb61ec68fbd26e729069e9f14d1e8bb31af1bc4/cavacore.c) and `app/src/main/assets/licenses/CAVA.txt` (packaged in the APK).
 
 ## Android APIs
 
-Playback follows the official [MediaSessionService background playback guide](https://developer.android.com/media/media3/session/background-playback) and [MediaController connection guide](https://developer.android.com/media/media3/session/connect-to-media-app). Microphone input uses [AudioRecord](https://developer.android.com/reference/android/media/AudioRecord) with mono PCM16 at 44.1 kHz on a dedicated worker thread. Glyph registration, session lifecycle and LED indices follow the Nothing SDK documentation linked above.
+Playback follows the official [MediaSessionService background playback guide](https://developer.android.com/media/media3/session/background-playback) and [MediaController connection guide](https://developer.android.com/media/media3/session/connect-to-media-app). System playback capture follows the official [Audio Playback Capture guide](https://developer.android.com/media/platform/av-capture). Physical microphone input uses [AudioRecord](https://developer.android.com/reference/android/media/AudioRecord) with mono PCM16 at 44.1 kHz on a dedicated worker thread. Glyph registration, session lifecycle and LED indices follow the Nothing SDK documentation linked above.
 
 ## Build and releases
 

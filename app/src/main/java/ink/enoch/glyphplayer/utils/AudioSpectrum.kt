@@ -5,9 +5,8 @@ import kotlin.math.cos
 import kotlin.math.log10
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.pow
 
-/** Normalized low (40–250 Hz), mid (250–2000 Hz), high (2000–8000 Hz) levels. */
+/** Low (40–250 Hz), mid (250–2000 Hz), high (2000–8000 Hz). Display envelopes normalize raw magnitudes to 0–1. */
 data class SpectrumLevels(val low: Float, val mid: Float, val high: Float) {
     fun smooth(previous: SpectrumLevels): SpectrumLevels {
         fun mix(value: Float, old: Float): Float {
@@ -42,12 +41,6 @@ fun visualizerSpectrum(fft: ByteArray, samplingRateMilliHz: Int): SpectrumLevels
 /** Reuse the frequency-bin lookup while the source format is unchanged. */
 class VisualizerSpectrumAnalyzer(private val size: Int, sampleRateMilliHz: Int) {
     private val bands = IntArray(size / 2) { band(it * (sampleRateMilliHz / 1000.0) / size) }
-    private val counts = IntArray(3).apply {
-        for (bin in 1 until bands.size) if (bands[bin] >= 0) this[bands[bin]]++
-    }
-    // CAVA linear scaling averages FFT magnitudes and compensates higher-frequency bands.
-    private val weights = doubleArrayOf((250.0 / 1000).pow(0.85), (2000.0 / 1000).pow(0.85), (8000.0 / 1000).pow(0.85))
-
     fun musicMagnitudes(fft: ByteArray): SpectrumLevels {
         require(fft.size == size)
         var low = 0.0
@@ -56,11 +49,10 @@ class VisualizerSpectrumAnalyzer(private val size: Int, sampleRateMilliHz: Int) 
         for (bin in 1 until bands.size) {
             val real = fft[2 * bin] / 128.0
             val imaginary = fft[2 * bin + 1] / 128.0
-            val amplitude = sqrt(real * real + imaginary * imaginary)
-            when (bands[bin]) { 0 -> low += amplitude; 1 -> mid += amplitude; 2 -> high += amplitude }
+            val power = real * real + imaginary * imaginary
+            when (bands[bin]) { 0 -> low += power; 1 -> mid += power; 2 -> high += power }
         }
-        return SpectrumLevels((low / maxOf(1, counts[0]) * weights[0]).toFloat(),
-            (mid / maxOf(1, counts[1]) * weights[1]).toFloat(), (high / maxOf(1, counts[2]) * weights[2]).toFloat())
+        return SpectrumLevels(sqrt(low).toFloat(), sqrt(mid).toFloat(), sqrt(high).toFloat())
     }
 
     fun analyze(fft: ByteArray): SpectrumLevels {
@@ -94,7 +86,21 @@ class PcmSpectrumAnalyzer(private val size: Int = 2048, private val sampleRate: 
     private val bands = IntArray(size / 2) { band(it.toDouble() * sampleRate / size) }
     private val powerScale = 4.0 / (size.toDouble() * size)
 
+    private var lowPower = 0.0
+    private var midPower = 0.0
+    private var highPower = 0.0
+
     fun analyze(samples: ShortArray): SpectrumLevels {
+        calculate(samples)
+        return SpectrumLevels(normalizedEnergy(lowPower), normalizedEnergy(midPower), normalizedEnergy(highPower))
+    }
+
+    fun musicMagnitudes(samples: ShortArray): SpectrumLevels {
+        calculate(samples)
+        return SpectrumLevels(sqrt(lowPower).toFloat(), sqrt(midPower).toFloat(), sqrt(highPower).toFloat())
+    }
+
+    private fun calculate(samples: ShortArray) {
         require(samples.size == size)
         val mean = samples.sumOf { it.toDouble() } / size
         imaginary.fill(0.0)
@@ -131,6 +137,8 @@ class PcmSpectrumAnalyzer(private val size: Int = 2048, private val sampleRate: 
             val power = (real[bin] * real[bin] + imaginary[bin] * imaginary[bin]) * powerScale
             when (bands[bin]) { 0 -> low += power; 1 -> mid += power; 2 -> high += power }
         }
-        return SpectrumLevels(normalizedEnergy(low), normalizedEnergy(mid), normalizedEnergy(high))
+        lowPower = low
+        midPower = mid
+        highPower = high
     }
 }

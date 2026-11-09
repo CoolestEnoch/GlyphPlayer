@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/audio_playback_capture"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/system_audio_description" />
+        <TextView
+            android:id="@+id/tvCaptureStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/system_audio_stopped" />
+        <Button
+            android:id="@+id/btnGrantAudio"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/grant_audio_capture" />
+        <Button
+            android:id="@+id/btnGrantNotifications"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/grant_notifications" />
+        <Button
+            android:id="@+id/btnBackground"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/microphone_background_enable" />
+        <Button
+            android:id="@+id/btnAuthorizeSystemAudio"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/authorize_system_audio" />
+        <Button
+            android:id="@+id/btnStartCapture"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/system_audio_start" />
+        <Button
+            android:id="@+id/btnStopCapture"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/system_audio_stop" />
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchGlyph"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:checked="true"
+            android:text="@string/glyph_interface" />
+        <TextView
+            android:id="@+id/tvGlyphStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/glyph_supported_devices" />
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchDot"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/glyph_dot_mode" />
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchReverse"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/glyph_reverse" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/microphone_low" />
+        <ProgressBar
+            android:id="@+id/levelLow"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            android:max="100" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/microphone_mid" />
+        <ProgressBar
+            android:id="@+id/levelMid"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            android:max="100" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/microphone_high" />
+        <ProgressBar
+            android:id="@+id/levelHigh"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            android:max="100" />
+    </LinearLayout>
+</ScrollView>

@@ -54,6 +54,7 @@ class AudioFrequencyAnalyzer(private val audioSessionId: Int, private val getGly
             val instance = Visualizer(audioSessionId)
             visualizer = instance
             instance.captureSize = Visualizer.getCaptureSizeRange()[1]
+            instance.scalingMode = Visualizer.SCALING_MODE_AS_PLAYED
             instance.setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
                 override fun onWaveFormDataCapture(visualizer: Visualizer?, waveform: ByteArray?, samplingRate: Int) { }
                 override fun onFftDataCapture(visualizer: Visualizer?, fft: ByteArray?, samplingRate: Int) {

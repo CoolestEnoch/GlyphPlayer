@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
@@ -21,6 +22,10 @@
         android:theme="@style/Theme.GlyphPlayer">
 <!--        <profileable android:shell="true"/>-->
         <service
+            android:name=".service.AudioPlaybackCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+        <service
             android:name=".service.MicrophoneService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
@@ -33,6 +38,9 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <activity
+            android:name=".ui.AudioPlaybackCaptureActivity"
+            android:exported="false" />
         <activity
             android:name=".ui.MicrophoneVisualizerActivity"
             android:exported="false" />

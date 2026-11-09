@@ -39,7 +39,10 @@ object GlyphHelper {
             onStatus?.invoke("Glyph requires Nothing Phone (3a) or (3a) Pro")
             return
         }
-        if (manager != null && currentOwner !== owner) return
+        if (manager != null && currentOwner !== owner) {
+            onStatus?.invoke("Glyph is in use by another visualizer")
+            return
+        }
         currentOwner = owner
         reportedError = null
         status = onStatus
