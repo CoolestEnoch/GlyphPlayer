@@ -6,7 +6,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="com.nothing.ketchum.permission.ENABLE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <application
@@ -25,9 +24,12 @@
             android:foregroundServiceType="mediaPlayback"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <activity
+            android:name=".ui.MicrophoneVisualizerActivity"
+            android:exported="false" />
         <activity
             android:name=".ui.SeekbarDebug"
             android:exported="false" />
@@ -43,9 +45,11 @@
             android:name="app_description_content"
             android:resource="@string/uninstall_summary" />
 
+        <!-- Android 16+: Glyph Interface works without Glyph Interface Debug Mode.
+             On older supported systems, use a valid NothingKey or enable Debug Mode. -->
         <meta-data
             android:name="NothingKey"
-            android:value="wdnmd114514" />
+            android:value="test" />
 
         <activity
             android:name=".ui.MainActivity"

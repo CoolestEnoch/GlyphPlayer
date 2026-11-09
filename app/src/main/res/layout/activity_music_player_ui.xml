@@ -57,7 +57,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:adjustViewBounds="true"
-                    android:contentDescription="专辑封面"
+                    android:contentDescription="Album artwork"
                     android:scaleType="centerCrop" />
 
             </androidx.cardview.widget.CardView>
@@ -83,12 +83,12 @@
                     android:gravity="center"
                     android:marqueeRepeatLimit="marquee_forever"
                     android:singleLine="true"
-                    android:text="音乐标题"
+                    android:text="Select a track"
                     android:textColor="@android:color/white"
                     android:textSize="24sp"
                     android:textStyle="bold" />
 
-                <!-- 歌手信息 -->
+                <!-- Artist信息 -->
                 <TextView
                     android:id="@+id/tvArtist"
                     android:layout_width="match_parent"
@@ -100,11 +100,11 @@
                     android:gravity="center"
                     android:marqueeRepeatLimit="marquee_forever"
                     android:singleLine="true"
-                    android:text="歌手"
+                    android:text="Artist"
                     android:textColor="#CCFFFFFF"
                     android:textSize="18sp" />
 
-                <!-- 专辑信息 -->
+                <!-- Album信息 -->
                 <TextView
                     android:id="@+id/tvAlbum"
                     android:layout_width="match_parent"
@@ -116,7 +116,7 @@
                     android:gravity="center"
                     android:marqueeRepeatLimit="marquee_forever"
                     android:singleLine="true"
-                    android:text="专辑"
+                    android:text="Album"
                     android:textColor="#CCFFFFFF"
                     android:textSize="16sp" />
 
@@ -137,7 +137,7 @@
                     android:id="@+id/tvProgressTime"
                     android:layout_height="wrap_content"
                     android:maxLines="1"
-                    android:text="11:45"
+                    android:text="0:00 / 0:00"
                     android:textColor="#CCFFFFFF"
                     android:textSize="16sp" />
 

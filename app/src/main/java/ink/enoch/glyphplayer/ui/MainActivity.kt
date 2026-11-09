@@ -26,6 +26,9 @@ class MainActivity : AppCompatActivity() {
         }
 
 
+        binding.btnMicrophoneVisualizer.setOnClickListener {
+            startActivity(Intent(this, MicrophoneVisualizerActivity::class.java))
+        }
         binding.btnPlayerUI.setOnClickListener {
             startActivity(Intent().setClass(this@MainActivity, MusicPlayerUI::class.java))
         }

@@ -1,46 +1,36 @@
 package ink.enoch.glyphplayer.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.ComponentName
-import android.content.ContentResolver
-import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.RenderEffect
 import android.graphics.Shader
-import android.graphics.Typeface
-import android.media.AudioManager
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
-import android.os.IBinder
-import android.util.Log
-import android.view.Gravity
+import android.os.Handler
+import android.os.Looper
 import android.view.View
-import android.widget.LinearLayout
 import android.widget.SeekBar
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.isVisible
 import androidx.documentfile.provider.DocumentFile
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.MediaSession
 import com.google.android.material.snackbar.Snackbar
 import com.nothing.ketchum.Common
 import com.nothing.ketchum.Glyph
@@ -50,677 +40,277 @@ import ink.enoch.glyphplayer.service.PlaybackService
 import ink.enoch.glyphplayer.utils.AudioFrequencyAnalyzer
 import ink.enoch.glyphplayer.utils.GlyphHelper
 import ink.enoch.glyphplayer.utils.formatTime
-import ink.enoch.glyphplayer.utils.runOnMainThread
-import java.util.LinkedList
-import java.util.Queue
-import kotlin.concurrent.thread
+import ink.enoch.glyphplayer.utils.readAudioItem
+import java.util.concurrent.Executors
 
-
+@OptIn(UnstableApi::class)
 class MusicPlayerUI : AppCompatActivity() {
     private lateinit var binding: ActivityMusicPlayerUiBinding
+    private val handler = Handler(Looper.getMainLooper())
+    private val worker = Executors.newSingleThreadExecutor()
+    private val playlist = mutableListOf<MediaItem>()
+    private var controller: MediaController? = null
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var analyzerSessionId = 0
+    private var visible = false
+    private var dotMode = false
+    private var analyzer: AudioFrequencyAnalyzer? = null
+    private var artworkId: String? = null
+    private var loading: AlertDialog? = null
 
-    // 音乐元信息
-    data class MusicMetaData(
-        val cover: Bitmap,
-        val title: String,
-        val artist: String,
-        val album: String
-    )
-
-    private var selectedFolderUri: Uri? = null // 存储用户选择的文件夹 URI
-    private val validExtList = listOf("mp3", "flac") // 支持的扩展名列表
-    private val playList = mutableListOf<Uri>() // 播放列表
-
-    //    private var playingIndex = 0 // 当前播放的音乐是播放列表里的第几个
-    private var playingUri: Uri? = null // 当前播放的URI
-    private var isShuffle = false // 随机播放
-    private var isGlyphDotMode = false // Glyph是单点模式还是长条模式
-
-    //    private var musicPlayer: ExoPlayer? = null // 主播放器
-//    private var mediaSession: MediaSession? = null
-    private var frequencyAnalyzer: AudioFrequencyAnalyzer? = null
-
-    private var playbackService: PlaybackService? = null
-    private var isServiceBound = false
-
-    // Service连接
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(className: ComponentName, service: IBinder) {
-            val binder = service as PlaybackService.LocalBinder
-            playbackService = binder.getService()
-            isServiceBound = true
-        }
-
-        override fun onServiceDisconnected(arg0: ComponentName) {
-            isServiceBound = false
-            playbackService = null
-        }
+    private val audioPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && visible) { initGlyph(); syncPlaybackUi() }
     }
-
-
-    // 注册 SAF 文件夹选择器
-    private val folderPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            result.data?.data?.let { uri ->
-                // 1. 保存用户选择的文件夹 URI
-                selectedFolderUri = uri
-
-                // 2. 获取持久化访问权限
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-
-                // 3. 获取文件夹内所有有效文件
-                thread { initPlayList(uri) }
+    private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                loadPlaylist(uri)
+            } catch (e: SecurityException) {
+                Toast.makeText(this, "Cannot access this folder: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
+    private val listener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) { syncPlaybackUi() }
+        override fun onPlayerError(error: PlaybackException) {
+            Toast.makeText(this@MusicPlayerUI, "Playback failed: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+    private val progress = object : Runnable {
+        override fun run() {
+            updateProgress()
+            handler.postDelayed(this, 500)
+        }
+    }
 
-    @OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
         binding = ActivityMusicPlayerUiBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-        // 创建activity自带的代码
-//        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-//            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-//            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-//            insets
-//        }
-
-        // 状态栏沉浸
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-        // 设置系统栏图标颜色（根据背景自适应）
-        ViewCompat.getWindowInsetsController(window.decorView)?.apply {
-            isAppearanceLightStatusBars = false // 深色背景用浅色图标
-            isAppearanceLightNavigationBars = false
-        }
-
-        // 启动并绑定PlaybackService服务
-        val intent = Intent(this, PlaybackService::class.java)
-        startService(intent)
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-
-        // 初始化Glyph
-        // 兼容性检查
-        if (!Common.is24111()) {
-            Toast.makeText(
-                this,
-                "Glyph lights only supported on Phone (3a) and (3a) Pro",
-                Toast.LENGTH_LONG
-            ).show()
-        } else {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                GlyphHelper.init(this, Glyph.DEVICE_24111)
-            } else {
-                requestPermissions(
-                    arrayOf(Manifest.permission.RECORD_AUDIO),
-                    114514
-                )
-            }
-        }
-
-        // 使用默认值设置封面和背景
-        val albumArtBitmap: Bitmap =
-            BitmapFactory.decodeResource(resources, R.mipmap.default_music_bg)
-        binding.ivAlbumArt.setImageBitmap(albumArtBitmap)
-        binding.ivBlurBackground.setImageBitmap(albumArtBitmap)
-        binding.ivBlurBackground.setRenderEffect(
-            RenderEffect.createBlurEffect(
-                25f,
-                25f,
-                Shader.TileMode.REPEAT
-            )
-        )
-
-
+        binding.ivBlurBackground.setRenderEffect(RenderEffect.createBlurEffect(25f, 25f, Shader.TileMode.CLAMP))
+        binding.btnPlayPause.isEnabled = false
         binding.sbProgress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-//                    Log.d(
-//                        "SeekBarControl",
-//                        "seekTo = ${progress.toLong()}, max = ${seekBar!!.max}, duration = ${seekBar!!.progress}"
-//                    )
-//                    musicPlayer?.seekTo(progress.toLong()) // 更新播放进度
-                    playbackService!!.seekTo(progress.toLong())
-                }
+            override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+                if (fromUser) { controller?.seekTo(value.toLong()); updateProgress() }
             }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(bar: SeekBar?) { }
+            override fun onStopTrackingTouch(bar: SeekBar?) { }
         })
-        binding.sbProgress.post(object : Runnable {
-            override fun run() {
-//                musicPlayer?.let { player ->
-                try {
-                    playbackService?.let { mService ->
-                        if (mService.isPlaying()) {
-                            val currentPosition = playbackService!!.getCurrentPosition()
-                            val duration = playbackService?.getDuration() ?: 1
-
-                            // 更新进度条
-                            val progress = (currentPosition * 100 / duration).toInt()
-                            binding.sbProgress.progress = currentPosition.toInt()
-
-                            // 更新时间显示
-                            val currentTime = formatTime(currentPosition)
-                            val totalTime = formatTime(duration)
-                            binding.tvProgressTime.text = "$currentTime / $totalTime"
-//                            Log.d(
-//                                "SeekBarStatus",
-//                                "max = ${binding.sbProgress.max}, currentPosition = ${currentPosition}, duration = ${
-//                                    playbackService!!.getDuration().toInt()
-//                                }"
-//                            )
-                        }
-                    }
-                    // 每1秒更新一次进度
-                    binding.sbProgress.postDelayed(this, 1000)
-                } catch (e: Exception) {
-                }
-            }
-        })
-
-        binding.btnPrev.setOnClickListener {
-            if (playList.isEmpty()) {
-                // 不存在播放列表, 选择文件夹，仅初始化播放列表，不初始化播放器
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                folderPickerLauncher.launch(intent)
-            } else {
-//                destroyPlayer()
-                if (isShuffle) {
-                    playNewMusic(playList.random())
-                } else {
-                    var playingIndex = playList.indexOf(playingUri)
-                    playingIndex -= 1
-                    if (playingIndex < 0) playingIndex = (playList.size - 1) % playList.size
-                    playNewMusic(playList[playingIndex])
-                }
-            }
-        }
-        var lastOnClickCallTime = 0L
-        binding.btnNext.setOnClickListener {
-            if(System.currentTimeMillis() - lastOnClickCallTime > 500){
-                Log.d("btnNext", "call onCLick")
-                lastOnClickCallTime = System.currentTimeMillis()
-                if (playList.isEmpty()) {
-                    // 不存在播放列表, 选择文件夹，仅初始化播放列表，不初始化播放器
-                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                    folderPickerLauncher.launch(intent)
-                } else {
-//                destroyPlayer()
-                    if (isShuffle) {
-                        playNewMusic(playList.random())
-                    } else {
-                        var playingIndex = playList.indexOf(playingUri)
-                        playingIndex = (playingIndex + 1) % playList.size
-                        playNewMusic(playList[playingIndex])
-                    }
-                }
-            }
-        }
-
-        binding.btnPlayPause.setOnLongClickListener {
-//            destroyPlayer()
-//            playList.clear()
-//            binding.llPlayList.removeAllViews()
-
-            true
-        }
         binding.btnPlayPause.setOnClickListener {
-            if (playList.isEmpty()) {
-                // 不存在播放列表, 选择文件夹，仅初始化播放列表，不初始化播放器
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                folderPickerLauncher.launch(intent)
-            } else {
-//                if (musicPlayer != null) {
-                if (playbackService != null && playbackService!!.hasMediaItem()) {
-                    // 存在播放列表, 切换播放状态控制
-//                    if (musicPlayer!!.isPlaying) {
-                    if (playbackService!!.isPlaying()) {
-//                        musicPlayer!!.pause()
-                        playbackService!!.pause()
-                        binding.btnPlayPause.text = "▶\uFE0F"
-                        frequencyAnalyzer?.stopAnalysis()
-                        frequencyAnalyzer = null
-                        thread {
-                            Thread.sleep(200)
-                            GlyphHelper.turnOffTheLight()
-                        }
-                    } else {
-//                        musicPlayer!!.play()
-                        playbackService!!.play()
-                        binding.btnPlayPause.text = "⏸\uFE0F"
-                        if(Common.is24111()){
-                            if (frequencyAnalyzer == null) {
-                                frequencyAnalyzer =
-                                    AudioFrequencyAnalyzer(playbackService!!.getAudioSessionId()) { isGlyphDotMode }.apply {
-                                        startAnalysis()
-                                    }
-                            }else{
-                                frequencyAnalyzer!!.startAnalysis()
-                            }
-                        }
+            val playback = controller ?: return@setOnClickListener
+            when {
+                playback.mediaItemCount > 0 -> {
+                    if (playback.playWhenReady && playback.playbackState != Player.STATE_ENDED) playback.pause()
+                    else {
+                        if (playback.playbackState == Player.STATE_IDLE) playback.prepare()
+                        if (playback.playbackState == Player.STATE_ENDED) playback.seekToDefaultPosition()
+                        playback.play()
                     }
-                } else {
-                    val selectedMusicUri = playList.random()
-//                    val index = playList.indexOf(selectedMusicUri)
-//                    playingIndex = index
-                    playNewMusic(selectedMusicUri)
                 }
+                playlist.isNotEmpty() -> playItems(0)
+                else -> folderPicker.launch(null)
             }
         }
-
+        binding.btnPrev.setOnClickListener { controller?.seekToPreviousMediaItem() }
+        binding.btnNext.setOnClickListener { controller?.seekToNextMediaItem() }
+        binding.btnShuffle.setOnClickListener {
+            controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+            syncPlaybackUi()
+        }
         binding.btnShuffle.setOnLongClickListener {
-            isGlyphDotMode = !isGlyphDotMode
-            val modeTip = if (isGlyphDotMode) {
-                "单点模式"
-            } else {
-                "长条模式"
-            }
-            Snackbar.make(window.decorView, "Glyph: $modeTip", Snackbar.LENGTH_LONG).show()
-
+            dotMode = !dotMode
+            Snackbar.make(binding.root, if (dotMode) "Glyph: Dot mode" else "Glyph: Bar mode", Snackbar.LENGTH_SHORT).show()
             true
         }
-        binding.btnShuffle.apply {
-            fun setIcon() {
-                if (isShuffle) {
-                    binding.btnShuffle.text = "🔀"
-                } else {
-                    binding.btnShuffle.text = "\uD83D\uDD01"
-                }
-            }
-            setIcon()
-            setOnClickListener {
-                isShuffle = !isShuffle
-                setIcon()
-            }
-        }
-
-
         binding.btnPlaylist.setOnClickListener {
-            if (binding.llPlayList.isVisible) {
-                binding.llPlayList.visibility = View.GONE
-            } else {
-                binding.llPlayList.visibility = View.VISIBLE
-            }
+            if (playlist.isEmpty()) folderPicker.launch(null)
+            else binding.llPlayList.isVisible = !binding.llPlayList.isVisible
         }
+        binding.btnPlaylist.setOnLongClickListener { folderPicker.launch(null); true }
+        if (Common.is24111() && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            audioPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        visible = true
+        connectController()
+        initGlyph()
+        syncPlaybackUi()
+        handler.post(progress)
+    }
+
+    override fun onStop() {
+        visible = false
+        handler.removeCallbacks(progress)
+        stopAnalyzer()
+        GlyphHelper.release()
+        controller?.removeListener(listener)
+        binding.btnPlayPause.isEnabled = false
+        controller = null
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controllerFuture = null
+        super.onStop()
     }
 
     override fun onDestroy() {
+        loading?.dismiss()
+        worker.shutdownNow()
         super.onDestroy()
-        destroyPlayer()
-        GlyphHelper.release()
-        frequencyAnalyzer?.stopAnalysis()
-        frequencyAnalyzer = null
     }
 
-    private fun initPlayList(folderUri: Uri) {
-        var dialog: AlertDialog? = null
-        runOnUiThread {
-            val builder = AlertDialog.Builder(this@MusicPlayerUI).apply {
-                setView(LinearLayout(this@MusicPlayerUI).apply {
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        orientation = LinearLayout.VERTICAL
-                        gravity = Gravity.CENTER
+    private fun connectController() {
+        val future = MediaController.Builder(this, SessionToken(this, ComponentName(this, PlaybackService::class.java)))
+            .setListener(object : MediaController.Listener {
+                override fun onExtrasChanged(controller: MediaController, extras: Bundle) { syncPlaybackUi() }
+                override fun onDisconnected(controller: MediaController) {
+                    this@MusicPlayerUI.controller = null
+                    binding.btnPlayPause.isEnabled = false
+                    stopAnalyzer()
+                }
+            }).buildAsync()
+        controllerFuture = future
+        future.addListener({
+            if (controllerFuture !== future || !visible) return@addListener
+            try {
+                val playback = future.get()
+                controller = playback
+                playback.addListener(listener)
+                if (playlist.isEmpty()) {
+                    playlist.addAll((0 until playback.mediaItemCount).map {
+                        val item = playback.getMediaItemAt(it)
+                        item.buildUpon().setUri(Uri.parse(item.mediaId)).build()
+                    })
+                    renderPlaylist()
+                }
+                syncPlaybackUi()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Cannot connect to player: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun playItems(index: Int) {
+        val playback = controller ?: return
+        if (index !in playlist.indices) return
+        val queued = (0 until playback.mediaItemCount).map(playback::getMediaItemAt)
+        if (queued.map { it.mediaId } == playlist.map { it.mediaId }) playback.seekTo(index, 0)
+        else playback.setMediaItems(playlist.toList(), index, 0)
+        playback.prepare()
+        playback.play()
+    }
+
+    private fun initGlyph() {
+        if (Common.is24111()) GlyphHelper.init(this, Glyph.DEVICE_24111)
+    }
+
+    private fun stopAnalyzer() {
+        analyzer?.stopAnalysis()
+        analyzer = null
+        analyzerSessionId = 0
+        GlyphHelper.turnOffTheLight()
+    }
+
+    private fun syncPlaybackUi() {
+        val playback = controller ?: return
+        binding.btnPlayPause.isEnabled = true
+        binding.btnPlayPause.text = if (playback.playWhenReady && playback.playbackState != Player.STATE_ENDED) "⏸️" else "▶️"
+        binding.btnShuffle.text = if (playback.shuffleModeEnabled) "🔀" else "🔁"
+        val item = playback.currentMediaItem
+        binding.btnPrev.isEnabled = item != null
+        binding.btnNext.isEnabled = item != null
+        if (item == null) {
+            artworkId = null
+            binding.tvSongTitle.text = "Select a track"
+            binding.tvArtist.text = "Artist"
+            binding.tvAlbum.text = "Album"
+            binding.ivAlbumArt.setImageResource(R.mipmap.default_music_bg)
+            binding.ivBlurBackground.setImageResource(R.mipmap.default_music_bg)
+        }
+        if (item != null && item.mediaId != artworkId) {
+            artworkId = item.mediaId
+            val metadata = item.mediaMetadata
+            binding.tvSongTitle.text = metadata.title ?: "Unknown track"
+            binding.tvArtist.text = metadata.artist ?: "Unknown artist"
+            binding.tvAlbum.text = metadata.albumTitle ?: "Unknown album"
+            val cover = metadata.artworkData?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                ?: BitmapFactory.decodeResource(resources, R.mipmap.default_music_bg)
+            binding.ivAlbumArt.setImageBitmap(cover)
+            binding.ivBlurBackground.setImageBitmap(cover)
+        }
+        updateProgress()
+        val audioSessionId = playback.sessionExtras.getInt(PlaybackService.EXTRA_AUDIO_SESSION_ID)
+        if (visible && playback.isPlaying && Common.is24111() && audioSessionId != 0 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            if (analyzer == null || analyzerSessionId != audioSessionId) {
+                stopAnalyzer()
+                analyzerSessionId = audioSessionId
+                analyzer = AudioFrequencyAnalyzer(audioSessionId) { dotMode }.apply { startAnalysis() }
+            }
+        } else stopAnalyzer()
+    }
+
+    private fun updateProgress() {
+        val playback = controller ?: return
+        binding.sbProgress.max = playback.duration.coerceAtLeast(0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        if (!binding.sbProgress.isPressed) binding.sbProgress.progress = playback.currentPosition.coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+        binding.tvProgressTime.text = "${formatTime(playback.currentPosition.coerceAtLeast(0))} / ${formatTime(playback.duration.coerceAtLeast(0))}"
+    }
+
+    private fun loadPlaylist(uri: Uri) {
+        loading = AlertDialog.Builder(this).setMessage("Loading playlist…").setCancelable(false).show()
+        worker.execute {
+            val items = mutableListOf<MediaItem>()
+            var failure: Exception? = null
+            try {
+                val folders = java.util.ArrayDeque<DocumentFile>()
+                DocumentFile.fromTreeUri(this, uri)?.let { folders.add(it) }
+                while (folders.isNotEmpty() && !Thread.currentThread().isInterrupted) {
+                    for (file in folders.removeFirst().listFiles()) {
+                        if (Thread.currentThread().isInterrupted) break
+                        if (file.isDirectory) folders.add(file)
+                        else if (file.isFile && file.name?.substringAfterLast('.', "")?.lowercase() in listOf("mp3", "flac")) {
+                            items.add(readAudioItem(this, file.uri))
+                        }
                     }
-                    addView(TextView(this@MusicPlayerUI).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            gravity = Gravity.CENTER
-                        }
-                        setPadding(0, 50, 0, 50)
-                        text = "Loading Playlist..."
-                        textSize = 35f
-                        setTypeface(null, Typeface.BOLD)
-                    })
-                    addView(TextView(this@MusicPlayerUI).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            gravity = Gravity.CENTER
-                        }
-                        setPadding(0, 0, 0, 0)
-                        textSize = 15f
-                        listOf(
-                            "(  ´･ω･)",
-                            "(　´･ω)",
-                            "(  　 ´･)",
-                            "( 　　´)",
-                            "(          )",
-                            "(`　　 )",
-                            "(･`       )",
-                            "(ω･`　)",
-                            "(･ω･`  )",
-                            "(´･ω･`)",
-                        ).let { list ->
-                            thread {
-                                Thread.sleep(500)
-                                while (dialog!!.isShowing) {
-                                    for (str in list) {
-                                        runOnUiThread {
-                                            setText(str)
-                                        }
-                                        Thread.sleep(50)
-                                    }
-                                }
-                            }
-                        }
-                    })
-                    addView(TextView(this@MusicPlayerUI).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            gravity = Gravity.CENTER
-                        }
-                        setPadding(0, 0, 0, 50)
-                        textSize = 30f
-                        listOf(
-                            "___(:з 」∠)_", "___(:з」 ∠)_", "__(:з 」∠)__",
-                            "__(:з」 ∠)__", "_(:з 」∠)___", "__(:з 」∠)__"
-                        ).let { list ->
-                            thread {
-                                Thread.sleep(500)
-                                while (dialog!!.isShowing) {
-                                    for (str in list) {
-                                        runOnUiThread {
-                                            setText(str)
-                                        }
-                                        Thread.sleep(500)
-                                    }
-                                }
-                            }
-                        }
-                    })
-                })
-            }
-            dialog = builder.create()
-            dialog!!.show()
-        }
-
-        fun isValidAudioFile(file: DocumentFile): Boolean {
-            if (!file.isFile) return false
-            val extension = file.name?.substringAfterLast('.', "")?.lowercase()
-            return extension in listOf("mp3", "flac") // 根据实际需要扩展
-        }
-
-        playList.clear()
-        val queue: Queue<DocumentFile> = LinkedList()
-        val rootFolder = DocumentFile.fromTreeUri(this, folderUri)
-        rootFolder?.let { queue.add(it) }
-
-        while (queue.isNotEmpty()) {
-            val currentFolder = queue.poll()
-            val files = currentFolder.listFiles() ?: continue
-
-            for (file in files) {
-                when {
-                    file.isDirectory -> queue.add(file)
-                    isValidAudioFile(file) -> playList.add(file.uri)
                 }
-            }
-        }
-
-        // 更新UI
-        runOnUiThread {
-            binding.llPlayList.removeAllViews()
-            playList.forEach { uri ->
-                binding.llPlayList.addView(createPlaylistMusicCard(uri))
-            }
-            dialog?.dismiss()
-        }
-    }
-
-    private fun initPlayListV1(folderUri: Uri) {
-        fun isValidAudioFile(file: DocumentFile): Boolean {
-            if (!file.isFile) return false
-            // 获取小写扩展名（不带点）
-            val extension = file.name?.substringAfterLast('.', "")?.lowercase()
-            return extension in validExtList
-        }
-
-        fun loadFilesRecursive(uri: Uri) {
-            val resolver: ContentResolver = contentResolver
-            val folderDoc = DocumentFile.fromTreeUri(this, uri)
-            folderDoc?.listFiles()?.forEach { file ->
-                when {
-                    file.isDirectory -> loadFilesRecursive(file.uri)
-                    isValidAudioFile(file) -> playList.add(file.uri)
-                }
-            }
-        }
-
-        playList.clear()
-        val folderDoc = DocumentFile.fromTreeUri(this, folderUri)
-        folderDoc?.listFiles()?.forEach { file ->
-            when {
-                file.isDirectory -> {
-                    // 递归遍历子文件夹
-                    loadFilesRecursive(file.uri)
-                }
-
-                isValidAudioFile(file) -> {
-                    playList.add(file.uri)
-                }
-            }
-        }
-        // 现在 playList 包含所有有效音频文件的 URI
-        // 可以开始使用播放列表
-        playList.forEach { item ->
+            } catch (e: Exception) { failure = e }
             runOnUiThread {
-                binding.llPlayList.addView(createPlaylistMusicCard(item))
-            }
-        }
-    }
-
-    fun createPlaylistMusicCard(uri: Uri) = MusicInfoCard(this).apply {
-        val metadata = getMusicMetadata(uri)
-        setMusicInfo(metadata.title, metadata.artist)
-        setOnDelete {
-            playList.remove(uri)
-            binding.llPlayList.removeView(this)
-        }
-        setOnClickView {
-//            destroyPlayer()
-            playNewMusic(uri)
-        }
-    }
-
-    private fun destroyPlayer() {
-//        mediaSession?.apply {
-//            release()
-//        }
-//        mediaSession = null
-//        musicPlayer?.apply {
-//            stop()
-//            release()
-//        }
-//        musicPlayer = null
-//        binding.tvPlayList.text = ""
-//
-//        frequencyAnalyzer?.stopAnalysis()
-//        frequencyAnalyzer = null
-        if (isServiceBound) {
-            playbackService!!.releasePlayer()
-            unbindService(serviceConnection)
-            isServiceBound = false
-        }
-    }
-
-    private fun playNewMusic(selectedMusicUri: Uri) {
-        // 开始播放
-        playbackService!!.playFromUri(selectedMusicUri)
-        playbackService!!.addListener(object : Player.Listener {
-            @OptIn(UnstableApi::class)
-            override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                super.onAudioSessionIdChanged(audioSessionId)
-            }
-
-            override fun onPlaybackStateChanged(state: Int) {
-                Log.d("musicPlayer", "state = $state")
-                when (state) {
-                    Player.STATE_READY -> {
-                        Log.d("onPlaybackStateChanged", "Player.STATE_READY")
-                        binding.sbProgress.max = playbackService!!.getDuration().toInt()
-                        if(Common.is24111()){
-                            if (frequencyAnalyzer == null) {
-                                frequencyAnalyzer =
-                                    AudioFrequencyAnalyzer(playbackService!!.getAudioSessionId()) { isGlyphDotMode }.apply {
-                                        startAnalysis()
-                                    }
-                            }else{
-                                frequencyAnalyzer!!.startAnalysis()
-                            }
-                        }
-                    }
-
-                    Player.STATE_ENDED -> {
-                        Log.d("onPlaybackStateChanged", "Player.STATE_ENDED")
-                        frequencyAnalyzer?.stopAnalysis()
-                        frequencyAnalyzer = null
-                        thread {
-                            Thread.sleep(10)
-                            runOnMainThread {
-                                binding.btnNext.callOnClick()
-                            }
-                        }
-                    }
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                loading?.dismiss()
+                if (failure != null) {
+                    Toast.makeText(this, "Cannot load folder: ${failure.message}", Toast.LENGTH_LONG).show()
+                } else {
+                    playlist.clear()
+                    playlist.addAll(items)
+                    renderPlaylist()
+                    binding.llPlayList.visibility = View.VISIBLE
+                    if (items.isEmpty()) Toast.makeText(this, "No MP3 or FLAC files found", Toast.LENGTH_SHORT).show()
                 }
             }
-        })
-        // 获取音乐uri
-        playingUri = selectedMusicUri
-        // 设置封面等信息
-        val metadata = getMusicMetadata(selectedMusicUri)
-        binding.ivBlurBackground.setImageBitmap(metadata.cover)
-        binding.ivAlbumArt.setImageBitmap(metadata.cover)
-        binding.tvSongTitle.text = metadata.title
-        binding.tvArtist.text = metadata.artist
-        binding.tvAlbum.text = metadata.album
-        binding.ivBlurBackground.setRenderEffect(
-            RenderEffect.createBlurEffect(
-                25f,
-                25f,
-                Shader.TileMode.REPEAT
-            )
-        )
+        }
     }
 
-//    @OptIn(UnstableApi::class)
-//    private fun playNewMusic(uri: Uri) {
-//        // 获取音乐uri
-//        val selectedMusicUri = uri
-//        playingUri = uri
-//        // 设置封面等信息
-//        val metadata = getMusicMetadata(selectedMusicUri)
-//        binding.ivBlurBackground.setImageBitmap(metadata.cover)
-//        binding.ivAlbumArt.setImageBitmap(metadata.cover)
-//        binding.tvSongTitle.text = metadata.title
-//        binding.tvArtist.text = metadata.artist
-//        binding.tvAlbum.text = metadata.album
-//        binding.ivBlurBackground.setRenderEffect(
-//            RenderEffect.createBlurEffect(
-//                25f,
-//                25f,
-//                Shader.TileMode.REPEAT
-//            )
-//        )
-//        // 开始播放
-//        musicPlayer = ExoPlayer.Builder(this@MusicPlayerUI).build()
-//        musicPlayer!!.apply {
-//            val thisPlayer = musicPlayer!!
-//            val mediaItem = MediaItem.fromUri(selectedMusicUri)
-//            setMediaItem(mediaItem)
-//            prepare()
-//            mediaSession = MediaSession.Builder(this@MusicPlayerUI, thisPlayer).build()
-//            Log.d("musicPlayer", "thisPlayer.audioSessionId = ${thisPlayer.audioSessionId}")
-//            addListener(object : Player.Listener {
-//                override fun onAudioSessionIdChanged(audioSessionId: Int) {
-//                    super.onAudioSessionIdChanged(audioSessionId)
-//                    if (frequencyAnalyzer == null && Common.is24111()) {
-//                        frequencyAnalyzer =
-//                            AudioFrequencyAnalyzer(thisPlayer.audioSessionId) { isGlyphDotMode }.apply {
-//                                startAnalysis()
-//                            }
-//                    }
-//                }
-//
-//                override fun onPlaybackStateChanged(state: Int) {
-//                    Log.d("musicPlayer", "state = $state")
-//                    when (state) {
-//                        Player.STATE_READY -> {
-//                            Log.d("musicPlayer", "duration = ${thisPlayer.duration}")
-//                            play()
-//                            binding.sbProgress.max = thisPlayer.duration.toInt()
-//                        }
-//
-//                        Player.STATE_ENDED -> {
-//                            frequencyAnalyzer?.stopAnalysis()
-//                            frequencyAnalyzer = null
-//                            thread {
-//                                Thread.sleep(10)
-//                                runOnMainThread {
-//                                    binding.btnNext.callOnClick()
-//                                }
-//                            }
-//                        }
-//                    }
-//                }
-//            })
-//        }
-//    }
-
-
-    // 工具函数
-    // 获取音频元信息
-    private fun getMusicMetadata(uri: Uri): MusicMetaData {
-        val retriever = MediaMetadataRetriever()
-        try {
-            // 封面
-            retriever.setDataSource(this, uri)
-            val coverData = retriever.embeddedPicture
-            val cover = if (coverData != null) {
-                BitmapFactory.decodeByteArray(coverData, 0, coverData.size)
-            } else {
-                BitmapFactory.decodeResource(resources, R.mipmap.default_music_bg)
+    private fun renderPlaylist() {
+        binding.llPlayList.removeAllViews()
+        playlist.forEach { item ->
+            val card = MusicInfoCard(this).apply {
+                setMusicInfo(item.mediaMetadata.title?.toString() ?: "Unknown track", item.mediaMetadata.artist?.toString() ?: "Unknown artist")
+                setOnClickView { playItems(playlist.indexOf(item)) }
+                setOnDelete {
+                    playlist.remove(item)
+                    controller?.let { playback ->
+                        val index = (0 until playback.mediaItemCount).firstOrNull { playback.getMediaItemAt(it).mediaId == item.mediaId }
+                        if (index != null) playback.removeMediaItem(index)
+                    }
+                    binding.llPlayList.removeView(this)
+                }
             }
-            val title =
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: "暂无标题"
-            val artist =
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "未知歌手"
-            val album =
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "未知专辑"
-
-            return MusicMetaData(cover, title, artist, album)
-        } catch (e: Exception) {
-            // 异常处理：若无法获取元数据，则返回默认值
-            return MusicMetaData(
-                BitmapFactory.decodeResource(resources, R.mipmap.default_music_bg),
-                "暂无标题",
-                "未知歌手",
-                "未知专辑"
-            )
-        } finally {
-            retriever.release()
+            binding.llPlayList.addView(card)
         }
     }
 }

@@ -18,24 +18,30 @@
             android:id="@+id/btnPlayerUI"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="GotoPlayerUI" />
+            android:text="Music Player" />
         <Button
             android:id="@+id/btnGoAudioVisualAi"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Go AudioVisualAi"/>
+            android:text="Audio Visualizer (Experimental)"/>
+
+        <Button
+            android:id="@+id/btnMicrophoneVisualizer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/microphone_visualizer" />
 
         <Button
             android:id="@+id/btnGoDebug"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Goto Debug"/>
+            android:text="Glyph Controls"/>
 
         <Button
             android:id="@+id/btnGoSeekbarDebug"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Goto Seekbar Debug"/>
+            android:text="Glyph Slider Test"/>
 
     </LinearLayout>
 

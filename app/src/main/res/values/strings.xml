@@ -7,8 +7,8 @@
     <string name="next">Next</string>
     <string name="previous">Previous</string>
     
-    <string name="uninstall_title">您真的要卸载Glyph Player吗</string>
-    <string name="uninstall_summary">卸载Glyph Player后，你的小米手机后盖也不会发光，因为这是给Nothing Phone (3a)写的程序。这条提示只是为了跟进一下小米的卸载提示API。玩得愉快！ ;)</string>
+    <string name="uninstall_title">Uninstall GlyphPlayer?</string>
+    <string name="uninstall_summary">GlyphPlayer controls the Glyph Interface on Nothing Phone (3a) and (3a) Pro. Uninstalling removes the player and its visualizers.</string>
 
     <string name="lorem_ipsum">
         Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris
@@ -46,4 +46,19 @@
         libero vel nunc consequat, quis tincidunt nisl eleifend. Cras bibendum enim a justo luctus
         vestibulum. Fusce dictum libero quis erat maximus, vitae volutpat diam dignissim.
     </string>
+    <string name="microphone_visualizer">Microphone Visualizer</string>
+    <string name="microphone_description">Visualize nearby sound on your Glyph lights. Audio is processed on your phone and is never saved. Recording stops when you leave this screen.</string>
+    <string name="microphone_start">Start microphone</string>
+    <string name="microphone_stop">Stop microphone</string>
+    <string name="microphone_stopped">Microphone stopped</string>
+    <string name="microphone_listening">Listening…</string>
+    <string name="microphone_permission_denied">Microphone permission is required. Tap Start microphone to try again, or enable it in app settings.</string>
+    <string name="microphone_error">Microphone error: %1$s</string>
+    <string name="glyph_interface">Glyph Interface</string>
+    <string name="glyph_supported_devices">Glyph lights require Nothing Phone (3a) or (3a) Pro.</string>
+    <string name="glyph_disabled">Glyph Interface disabled</string>
+    <string name="glyph_dot_mode">Dot mode</string>
+    <string name="microphone_low">Low · 40–250 Hz · A strip</string>
+    <string name="microphone_mid">Mid · 250–2000 Hz · B strip</string>
+    <string name="microphone_high">High · 2000–8000 Hz · C strip</string>
 </resources>

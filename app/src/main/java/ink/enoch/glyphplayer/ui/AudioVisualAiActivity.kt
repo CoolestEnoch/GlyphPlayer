@@ -19,6 +19,7 @@ import com.nothing.ketchum.Common
 import com.nothing.ketchum.Glyph
 import com.nothing.ketchum.GlyphException
 import com.nothing.ketchum.GlyphManager
+import ink.enoch.glyphplayer.utils.visualizerSpectrum
 import ink.enoch.glyphplayer.databinding.ActivityAudioVisualAiBinding
 import kotlin.concurrent.thread
 
@@ -28,9 +29,8 @@ class AudioVisualAiActivity : AppCompatActivity() {
     private val TAG = "GlyphMusicPlayer"
     private var FFT_FPS = 10 // 帧率 (1-60)
     private var FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
-    private val AUDIO_PERMISSION_REQUEST_CODE = 1001
     private val RECORD_PERMISSION_REQUEST_CODE = 1002
-    private val SAF_CHOOSE_AUDIO = 1003
+    private var pendingDocumentPicker = false
 
     private lateinit var binding: ActivityAudioVisualAiBinding
     private var mediaPlayer: MediaPlayer? = null
@@ -38,6 +38,7 @@ class AudioVisualAiActivity : AppCompatActivity() {
     private var glyphManager: GlyphManager? = null
     private var isSupportedDevice = false
     private var mIsPlaying = false
+    @Volatile private var rolling = false
     private var updateHandler: Handler? = null
 
     private val updateRunnable = object : Runnable {
@@ -100,17 +101,13 @@ class AudioVisualAiActivity : AppCompatActivity() {
         }
 
         binding.btnFPSConfirm.setOnClickListener {
-            val fps_tmp = binding.etFPS.text.toString()
-            var fps_i = FFT_FPS;
-            try {
-                var fps_tmp_i = fps_tmp.toInt()
-                fps_i = fps_tmp_i
-            } catch (e: NumberFormatException) {
-                Snackbar.make(window.decorView, "Invalid int fps value", Snackbar.LENGTH_LONG)
-                    .show()
+            val fps = binding.etFPS.text.toString().toIntOrNull()
+            if (fps == null || fps !in 1..60) {
+                Snackbar.make(binding.root, "FPS must be between 1 and 60", Snackbar.LENGTH_LONG).show()
+            } else {
+                FFT_FPS = fps
+                FFT_REFRESH_RATE_MS = 1000L / fps
             }
-            FFT_FPS = fps_i
-            FFT_REFRESH_RATE_MS = 1000L / FFT_FPS
         }
 
         binding.btnPlayerUI.setOnClickListener {
@@ -141,10 +138,10 @@ class AudioVisualAiActivity : AppCompatActivity() {
                     mediaPlayer?.start()
                 }
                 mIsPlaying = !mIsPlaying
+                if (!mIsPlaying) glyphManager?.turnOff()
             }
         }
 
-        var rolling = false
         binding.btnStop.setOnClickListener {
             rolling = false
             stopMusicAndCleanup()
@@ -153,9 +150,11 @@ class AudioVisualAiActivity : AppCompatActivity() {
 
         binding.btnGlyphRolling.setOnClickListener {
             rolling = !rolling
+            if (rolling) startGlyphUpdates() else glyphManager?.turnOff()
             thread {
                 while (rolling) {
                     for (i in 0..10) {
+                        if (!rolling) break
                         lowFreqEnergy = i / 10f
                         midFreqEnergy = i / 10f
                         highFreqEnergy = i / 10f
@@ -166,6 +165,7 @@ class AudioVisualAiActivity : AppCompatActivity() {
                         Thread.sleep(10)
                     }
                     for (i in 10 downTo 0) {
+                        if (!rolling) break
                         lowFreqEnergy = i / 10f
                         midFreqEnergy = i / 10f
                         highFreqEnergy = i / 10f
@@ -181,6 +181,7 @@ class AudioVisualAiActivity : AppCompatActivity() {
     }
 
     private fun initializeGlyphManager() {
+        if (glyphManager != null) return
         glyphManager = GlyphManager.getInstance(applicationContext)
         glyphManager?.init(object : GlyphManager.Callback {
             override fun onServiceConnected(componentName: ComponentName?) {
@@ -205,17 +206,12 @@ class AudioVisualAiActivity : AppCompatActivity() {
     }
 
     private fun checkPermissionsAndOpenPicker() {
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.READ_MEDIA_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
+        // SAF itself needs no storage permission. RECORD_AUDIO is needed only by Visualizer.
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             openDocumentPicker()
         } else {
-            requestPermissions(
-                arrayOf(Manifest.permission.READ_MEDIA_AUDIO),
-                AUDIO_PERMISSION_REQUEST_CODE
-            )
+            pendingDocumentPicker = true
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), RECORD_PERMISSION_REQUEST_CODE)
         }
     }
 
@@ -233,8 +229,13 @@ class AudioVisualAiActivity : AppCompatActivity() {
                     binding.sbProgress.max = duration
                     start()
                     mIsPlaying = true
-                    setupVisualizer(audioSessionId)
-                    startGlyphUpdates()
+                    try {
+                        setupVisualizer(audioSessionId)
+                        startGlyphUpdates()
+                    } catch (e: Exception) {
+                        Toast.makeText(this@AudioVisualAiActivity, "Cannot start audio visualizer: ${e.message}", Toast.LENGTH_LONG).show()
+                        stopMusicAndCleanup()
+                    }
                 }
                 prepareAsync()
             }
@@ -271,75 +272,27 @@ class AudioVisualAiActivity : AppCompatActivity() {
     }
 
     private fun processFFTData(fftData: ByteArray, samplingRate: Int) {
-        val n = fftData.size / 2
-        if (n < 2) return
-
-        // 计算频率区间
-        val freqStep = samplingRate / 2f / n
-        val lowFreqEnd = (300 / freqStep).toInt() + 1
-        val midFreqEnd = (6000 / freqStep).toInt() + 1
-
-        // 重置能量值
-        var lowSum = 0f
-        var midSum = 0f
-        var highSum = 0f
-
-        // 处理FFT数据 (实部和虚部交替)
-        for (i in 2 until n * 2 step 2) {
-            val real = fftData[i].toFloat()
-            val imag = fftData[i + 1].toFloat()
-            val magnitude = real * real + imag * imag
-
-            val freqIndex = (i / 2) - 1
-            when {
-                freqIndex < lowFreqEnd -> lowSum += magnitude
-                freqIndex < midFreqEnd -> midSum += magnitude
-                else -> highSum += magnitude
-            }
+        val levels = visualizerSpectrum(fftData, samplingRate)
+        runOnUiThread {
+            lowFreqEnergy = levels.low
+            midFreqEnergy = levels.mid
+            highFreqEnergy = levels.high
         }
-
-
-        // 平滑处理并归一化
-        lowFreqEnergy = if (lowSum < 500) {
-            lowSum / 500f
-        } else if (lowSum < 1000) {
-            lowSum / 1000f
-        } else if (lowSum < 5000) {
-            lowSum / 5000f
-        } else if (lowSum < 10000) {
-            lowSum / 10000f
-        } else if (lowSum < 50000) {
-            lowSum / 50000f
-        } else {
-            lowSum / 100000f
-        }
-        //lowFreqEnergy = lowSum / 100000f //.coerceAtMost(1f)
-        highFreqEnergy = highSum / 100000f //.coerceAtMost(1f)
-        midFreqEnergy = (lowFreqEnergy + highFreqEnergy) / 2 // / 100000f //.coerceAtMost(1f)
-        Log.d(TAG, "lowFreqEnergy = ${lowFreqEnergy}")
-        Log.d(TAG, "midFreqEnergy = ${midFreqEnergy}")
-        Log.d(TAG, "highFreqEnergy = ${highFreqEnergy}")
-        Log.d(TAG, "======================================")
-//        lowFreqEnergy = 0.5f
-//        midFreqEnergy = 0.5f
-//        highFreqEnergy = 0.5f
     }
 
     private fun startGlyphUpdates() {
+        updateHandler?.removeCallbacks(updateRunnable)
         updateHandler = Handler(Looper.getMainLooper())
         updateHandler?.post(updateRunnable)
     }
 
     private fun updateGlyphLights() {
-        if (!isSupportedDevice || !mIsPlaying) return
+        if (!isSupportedDevice || (!mIsPlaying && !rolling)) return
 
         try {
             val builder = glyphManager?.getGlyphFrameBuilder() ?: return
 
             // 清除之前的设置
-            builder.buildPeriod(0)
-            builder.buildCycles(0)
-            builder.buildInterval(0)
 
             // 高频 - A灯条 (A1-A11)
             val aLevel = (highFreqEnergy * A_LED_RANGE.count()).toInt()
@@ -361,16 +314,14 @@ class AudioVisualAiActivity : AppCompatActivity() {
     }
 
     private fun stopMusicAndCleanup() {
+        rolling = false
         mIsPlaying = false
         updateHandler?.removeCallbacks(updateRunnable)
 
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
-        mediaPlayer = null
-
-        visualizer?.enabled = false
         visualizer?.release()
         visualizer = null
+        mediaPlayer?.release()
+        mediaPlayer = null
 
         try {
             glyphManager?.turnOff()
@@ -379,16 +330,24 @@ class AudioVisualAiActivity : AppCompatActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        stopMusicAndCleanup()
+    override fun onStart() {
+        super.onStart()
+        if (isSupportedDevice && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            initializeGlyphManager()
+        }
+    }
 
+    override fun onStop() {
+        stopMusicAndCleanup()
         try {
             glyphManager?.closeSession()
-            glyphManager?.unInit()
         } catch (e: GlyphException) {
-            Log.e(TAG, "Glyph cleanup error: ${e.message}")
+            Log.e(TAG, "Glyph cleanup error", e)
+        } finally {
+            glyphManager?.unInit()
+            glyphManager = null
         }
+        super.onStop()
     }
 
     override fun onRequestPermissionsResult(
@@ -397,17 +356,13 @@ class AudioVisualAiActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == AUDIO_PERMISSION_REQUEST_CODE &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            openDocumentPicker()
-        }
         if (requestCode == RECORD_PERMISSION_REQUEST_CODE &&
             grantResults.isNotEmpty() &&
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) {
-            initializeGlyphManager()
+            if (isSupportedDevice) initializeGlyphManager()
+            if (pendingDocumentPicker) openDocumentPicker()
         }
+        pendingDocumentPicker = false
     }
 }

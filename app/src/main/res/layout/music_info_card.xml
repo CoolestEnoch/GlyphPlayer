@@ -11,7 +11,7 @@
         android:id="@+id/tvMusicInfo"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="5"
+        android:layout_weight="1"
         android:maxLines="1"
         android:ellipsize="marquee"
         android:focusable="true"
@@ -22,10 +22,9 @@
 
     <Button
         android:id="@+id/btnDelete"
-        android:layout_width="0dp"
-        android:layout_weight="1"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="删"
+        android:text="Remove"
         android:backgroundTint="#FF0000"
         android:textColor="@android:color/white"/>
 </LinearLayout>
